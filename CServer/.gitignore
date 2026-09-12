@@ -1,0 +1,17 @@
+# VS 临时目录
+.vs/
+# 编译输出
+x64/
+Debug/
+Release/
+*.pdb
+*.idb
+*.ipch
+*.obj
+*.exe
+*.ilk
+*.tlog
+*.log
+# 个人设置
+*.vcxproj.user
+*.suo
