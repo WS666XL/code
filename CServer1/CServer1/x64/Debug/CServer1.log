@@ -1,0 +1,19 @@
+﻿  HttpConnection.cpp
+  Please define _WIN32_WINNT or _WIN32_WINDOWS appropriately. For example:
+  - add -D_WIN32_WINNT=0x0601 to the compiler command line; or
+  - add _WIN32_WINNT=0x0601 to your project's Preprocessor Definitions.
+  Assuming _WIN32_WINNT=0x0601 (i.e. Windows 7 target).
+D:\IT\kaifa\boost_1_90_0\boost\beast\websocket\detail\impl_base.hpp(186,35): warning C4267: “+=”: 从“size_t”转换到“uint8_t”，可能丢失数据
+  (编译源文件“E:/ai_coding/sb/.workbuddy/Cserver/HttpConnection.cpp”)
+  
+  LogicSystem.cpp
+  Please define _WIN32_WINNT or _WIN32_WINDOWS appropriately. For example:
+  - add -D_WIN32_WINNT=0x0601 to the compiler command line; or
+  - add _WIN32_WINNT=0x0601 to your project's Preprocessor Definitions.
+  Assuming _WIN32_WINNT=0x0601 (i.e. Windows 7 target).
+D:\IT\kaifa\boost_1_90_0\boost\beast\websocket\detail\impl_base.hpp(186,35): warning C4267: “+=”: 从“size_t”转换到“uint8_t”，可能丢失数据
+  (编译源文件“E:/ai_coding/sb/.workbuddy/Cserver/LogicSystem.cpp”)
+  
+  正在生成代码...
+  LINK : 没有找到 D:\IT\cpp\CServer1\x64\Debug\CServer1.exe 或上一个增量链接没有生成它；正在执行完全链接
+  CServer1.vcxproj -> D:\IT\cpp\CServer1\x64\Debug\CServer1.exe
