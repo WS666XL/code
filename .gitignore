@@ -1,0 +1,99 @@
+# ============================================================
+#  code 仓库统一 .gitignore
+#  原则：只提交源码 / 工程文件 / 资源；构建产物、缓存、密钥一律不提交
+# ============================================================
+
+# ---------- Visual Studio ----------
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.VC.opendb
+ipch/
+
+# VS 编译中间产物与输出（不带前导斜杠 → 匹配任意层级同名目录）
+x64/
+x86/
+Debug/
+Release/
+ARM/
+ARM64/
+*.obj
+*.o
+*.ilk
+*.idb
+*.pch
+*.pdb
+*.pgc
+*.pgd
+*.exp
+*.tlog
+*.lastbuildstate
+*.log
+*.cache
+*.lib
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+
+# ---------- CMake ----------
+build/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+compile_commands.json
+
+# ---------- Qt / Qt Creator ----------
+.qtcreator/
+*.pro.user
+*.pro.user.*
+qmake.stash
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+Makefile
+Makefile.*
+debug/
+release/
+qrc_*.cpp
+
+# ---------- Node.js ----------
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm/
+coverage/
+dist/
+
+# ---------- 密钥与本地配置（重要！绝不提交） ----------
+# config.json 内含 163 邮箱 SMTP 授权码、Redis 密码等真实凭据
+config.json
+*.env
+.env
+.env.*
+!config.example.json
+
+# ---------- 备份 / 临时文件 ----------
+*.bak
+*.tmp
+*.orig
+*.rej
+*~
+
+# ---------- 编辑器 / 操作系统 ----------
+.idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store

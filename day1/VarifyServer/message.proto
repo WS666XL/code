@@ -1,0 +1,32 @@
+﻿// message.proto —— gRPC 的「接口契约」文件
+// 它本身不参与 C++ 编译，而是先用 protoc 生成 4 个文件，再把生成的文件编进工程：
+//   protoc --cpp_out=. --grpc_out=. --plugin=protoc-gen-grpc=grpc_cpp_plugin.exe message.proto
+//     message.pb.h / message.pb.cc            → 消息类：GetVarifyReq / GetVarifyRsp
+//     message.grpc.pb.h / message.grpc.pb.cc  → 服务桩：VarifyService::Stub / VarifyService::Service
+// 结论：改了这个文件必须重新跑 protoc，否则生成的代码与 proto 对不上。
+
+syntax = "proto3";        // 语法版本，必须是文件里的第一条语句（proto3 的字段不再需要 required/optional）
+
+package message;          // 包名，生成的 C++ 代码里就是 namespace message
+
+// 服务定义：一组可以被远端调用的方法。protoc 会据此同时生成两套代码
+//   客户端 Stub（VarifyService::Stub）—— 调用方（GateServer）用
+//   服务端骨架（VarifyService::Service）—— 实现方（VarifyServer）用
+service VarifyService {
+  // 方法名 GetVarifyCode，入参 GetVarifyReq，出参 GetVarifyRsp；{} 里可写 option，本例为空
+  rpc GetVarifyCode (GetVarifyReq) returns (GetVarifyRsp) {}
+}
+
+// 请求消息体，对应生成的 C++ 类 message::GetVarifyReq
+message GetVarifyReq {
+  string email = 1;       // 字段名 email，编号 1；生成 set_email() / email() 这类访问器
+}
+
+// 响应消息体，对应生成的 C++ 类 message::GetVarifyRsp
+message GetVarifyRsp {
+  // 编号（= 1 / 2 / 3）是序列化成二进制时的「字段标签」，一旦上线就不能改；
+  // 新增字段只能用新编号往后加，删掉的编号要 reserved 保留，避免被复用导致新旧端解析错乱
+  int32 error = 1;        // 业务错误码：0 表示成功，其余见 const.h 里的 ErrorCodes
+  string email = 2;       // 回传邮箱，便于客户端核对是自己发的那次请求
+  string code = 3;        // 生成的验证码
+}
