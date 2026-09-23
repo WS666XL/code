@@ -10,6 +10,7 @@
 |---|---|---|
 | [day1](day1) | 账号注册的验证码功能 —— 打通 Qt → HTTP → gRPC → SMTP 全链路 | ✅ |
 | [day2](day2) | 验证码接入 Redis —— 缓存下发 + 注册时回查校验 | ✅ |
+| [day3](day3) | **重置密码（忘记密码）功能** —— 校验验证码后改密，并补齐 MySQL 数据层 | ✅ |
 
 ---
 
@@ -132,6 +133,59 @@ Qt 客户端 ──HTTP POST /register──▶ CServer1 LogicSystem
 | 用户连续点击「获取验证码」不重复发信 | 先 `GET`，命中就复用同一个验证码 |
 | C++ 与 Node 两端共享同一份数据 | Redis 是跨语言的中立存储，两边都能读写 |
 | 临时高频数据不写进 MySQL | 验证码"用完即弃"，天然适合内存存储 |
+
+---
+
+## day3 — 重置密码（忘记密码）功能 ✅ 已完成
+
+`day3/` 在 day2 的基础上**打通了「忘记密码」流程**，同时把服务端的 **MySQL 数据层补全**。
+
+### 本次新增
+
+| 位置 | 新增内容 |
+|---|---|
+| **CServer1** | 新增 `MysqlMgr` / `MysqlDao`（MySQL 逻辑层 + 数据访问 + 连接池），`config.ini` 增加 `[Mysql]` 段；`LogicSystem` 新增 `POST /reset_pwd` 接口 |
+| **VarifyServer** | 逻辑无需改动 —— 重置密码**复用**了原有的发码通路 |
+| **llfcchat** | 新增 **`ResetDialog`（忘记密码界面）**；`MainWindow` 增加 `SlotSwitchReset` / `SlotSwitchLogin2` 负责界面切换；`HttpMgr` 增加 `sig_reset_mod_finish` 信号与 `RESETMOD` 模块 |
+
+### 重置密码的完整链路
+
+```
+Qt ResetDialog（用户名 / 邮箱 / 新密码 / 验证码）
+      │  ① 点「获取」→ HTTP POST /get_varifycode（复用注册那套发码逻辑）
+      │  ② 点「确认」→ HTTP POST /reset_pwd
+      ▼
+CServer1 GateServer · LogicSystem 的 /reset_pwd 处理器（LogicSystem.cpp:149）
+      │
+      ├─ 关卡1　JSON 解析失败 ────────────────────→ error 1001
+      ├─ 关卡2　Redis 取不到 code_<email> ────────→ error 1003（验证码过期）
+      ├─ 关卡3　验证码与提交值不符 ────────────────→ error 1004（验证码错误）
+      ├─ 关卡4　CheckEmail(用户名, 邮箱) 不匹配 ────→ error 1007（用户名与邮箱不匹配）
+      ├─ 关卡5　UpdatePwd(用户名, 新密码) 失败 ─────→ error 1008（更新密码失败）
+      └─ 全部通过 ─────────────────────────────→ error 0
+```
+
+### 与注册流程的差别
+
+注册走的是**存储过程** `CALL reg_user(?,?,?,@result)`（一次调用完成"查重 + 发号 + 插入"）。
+重置换成了两个**普通 SQL**：先 `CheckEmail` 验证"用户名与邮箱确实匹配"，再 `UpdatePwd` 改密码。
+两条路都经过 `MysqlMgr → MysqlDao → 连接池` 这一套。
+
+### 关键文件
+
+- `CServer1/MysqlMgr.h` / `.cpp` —— MySQL 逻辑层单例（`RegUser` / `CheckEmail` / `UpdatePwd`）
+- `CServer1/MysqlDao.h` / `.cpp` —— 数据访问层，内含 `MySqlPool` 连接池（5 条连接 + 每 60 秒保活探针）
+- `CServer1/LogicSystem.cpp` —— `POST /reset_pwd` 的五道关卡
+- `llfcchat/resetdialog.h` / `.cpp` / `.ui` —— 忘记密码界面
+- `llfcchat/mainwindow.cpp` —— `SlotSwitchReset()` / `SlotSwitchLogin2()` 界面切换
+- `llfcchat/httpmgr.h` —— 新增 `sig_reset_mod_finish` 信号
+
+### 顺带修复
+
+- `VarifyServer/redis.js` —— 去掉了 `error` 回调里的 `RedisCli.quit()`。
+  原写法会在 **Redis 重启时把客户端彻底关死**（`quit()` 是优雅关闭语义，会**禁用 ioredis 的自动重连**），
+  之后所有命令都报 `Connection is closed.`，**即使 Redis 已恢复也不会自愈**，只能重启进程。
+  现在只打日志，并补了 `connect` / `reconnecting` 状态日志，方便一眼看出连接状态。
 
 ---
 
