@@ -11,6 +11,7 @@
 | [day1](day1) | 账号注册的验证码功能 —— 打通 Qt → HTTP → gRPC → SMTP 全链路 | ✅ |
 | [day2](day2) | 验证码接入 Redis —— 缓存下发 + 注册时回查校验 | ✅ |
 | [day3](day3) | **重置密码（忘记密码）功能** —— 校验验证码后改密，并补齐 MySQL 数据层 | ✅ |
+| [day4](day4) | **基本登录** + **新增状态服务器 StatusServer** —— 登录校验密码后由状态服务分配聊天服务器并下发 token | ✅ |
 
 ---
 
@@ -189,18 +190,102 @@ CServer1 GateServer · LogicSystem 的 /reset_pwd 处理器（LogicSystem.cpp:14
 
 ---
 
+## day4 — 基本登录 + 新增状态服务器 ✅ 已完成
+
+`day4/` 完成了**用户登录流程**，并新增了第三台服务 **StatusServer（状态服务器）**——
+它是微服务架构里的"调度台"：客户端登录时，由它决定你该连哪一台聊天服务器，并给你发一张入场券（token）。
+
+### 本次新增
+
+| 位置 | 新增内容 |
+|---|---|
+| **StatusServer**（全新工程） | C++ / gRPC 状态服务器，监听 `:50052`。对外两个 gRPC 接口：`GetChatServer`（挑一台聊天服务器 + 下发 token）、`Login`（校验 token）。内部带 `RedisMgr`（含**分布式锁** `DistLock`）、`MysqlMgr` / `MysqlDao`、`ConfigMgr`、`AsioIOServicePool` |
+| **CServer1** | 新增 `StatusGrpcClient.h/.cpp`（内含 `StatusConPool` 连接池 + 单例封装）；`LogicSystem` 新增 `POST /user_login` 接口；`MysqlMgr` 新增 `CheckPwd`（校验邮箱 + 密码）；`config.ini` 增加 `[StatusServer]` 段 |
+| **VarifyServer** | **本次无改动** —— 登录不走验证码，与它无关（文件内容与 day3 完全一致） |
+| **llfcchat** | 登录界面接通后端：`LoginDialog` 发 `POST /user_login`；`HttpMgr` 新增 `sig_login_mod_finish` 信号与 `LOGINMOD` 模块；`global.h` 新增 `ID_LOGIN_USER` / `ID_CHAT_LOGIN` 等 ReqId，以及 `ServerInfo` 结构体（存 Host / Port / Token / Uid） |
+
+### 登录的完整链路
+
+```
+Qt LoginDialog（邮箱 + 密码）
+      │  HTTP POST /user_login  { email, passwd }
+      ▼
+CServer1 GateServer · LogicSystem 的 /user_login 处理器（LogicSystem.cpp:221）
+      │
+      ├─ 关卡1　JSON 解析失败 ─────────────────────────→ error 1001
+      ├─ 关卡2　MysqlMgr::CheckPwd(email, pwd) 不匹配 ─→ error 1009（密码错误）
+      │
+      ├─ 关卡3　StatusGrpcClient::GetChatServer(uid)
+      │           │
+      │           │  gRPC 同步调用（StatusConPool 取 Stub）
+      │           ▼
+      │      StatusServer (:50052) · StatusServiceImpl::GetChatServer
+      │           ├─ getChatServer()            从 config.ini 的 [chatservers] 里挑一台聊天服务器
+      │           ├─ generate_unique_string()   boost::uuids 生成 token
+      │           └─ insertToken(uid, token)    SET user_token_<uid> = token（写进 Redis）
+      │           │
+      │           ├─ RPC 失败 ────────────────────────→ error 1002（RPC 失败）
+      │           └─ RPC 成功 ────────────────────────→ 拿到 host / port / token
+      │
+      └─ 全部通过 ────────────────────────────────────→ error 0
+                                                          + email / uid / token / host
+```
+
+### 为什么要有状态服务器
+
+| 需求 | StatusServer 给出的答案 |
+|---|---|
+| 登录成功后该连哪台聊天服务器 | 网关不硬编码，改为向状态服务**问一次** |
+| 客户端后续连 ChatServer 时如何证明"我登录过" | 登录成功即下发 token，写进 Redis 备查 |
+| 以后有 chatserver1 / chatserver2 多台怎么办 | `config.ini` 的 `[chatservers]` 列出全部，扩展时只改配置 |
+| 多台 StatusServer 可能同时发 token | `RedisMgr` 里接了 `DistLock`（基于 Redis 的分布式锁） |
+
+**为什么不让客户端直接找 StatusServer？** 客户端只认网关一个入口（`http://localhost:8080`）。
+网关对内扮演 gRPC 客户端的角色，客户端不需要知道后端有几台服务、分别在哪。
+
+### 关键文件
+
+- `StatusServer/StatusServiceImpl.h` / `.cpp` —— `GetChatServer` / `Login` 两个接口的实现，`ChatServer` 结构体（host / port / name / con_count）
+- `StatusServer/StatusServer.cpp` —— 服务入口，注册 `StatusServiceImpl` 并监听 50052
+- `StatusServer/DistLock.h` / `.cpp` —— Redis 分布式锁（`acquireLock` / `releaseLock`），由 `RedisMgr` 暴露 `Lock` / `Unlock`
+- `StatusServer/config.ini` —— 除了 MySQL / Redis，还多了 `[chatservers]` 与每台聊天服务器的 `[chatserver1]` / `[chatserver2]` 段
+- `CServer1/StatusGrpcClient.h` / `.cpp` —— `StatusConPool` 连接池（Stub 队列 + 条件变量）+ `StatusGrpcClient` 单例
+- `CServer1/LogicSystem.cpp` —— `POST /user_login` 的三道关卡
+- `CServer1/MysqlMgr.h` —— 新增 `CheckPwd(邮箱, 密码, UserInfo&)`
+- `llfcchat/logindialog.cpp` —— 登录按钮的处理逻辑（`logindialog.cpp:160` 处发请求）
+- `llfcchat/global.h` —— `ID_LOGIN_USER = 1004`、`ServerInfo{ Host, Port, Token, Uid }`
+
+### 与注册 / 重置密码的差别
+
+- **注册、重置密码**：数据校验都在 Redis 与 MySQL 里完成，走完就返回，**不涉及第二台服务**。
+- **登录**：密码校验仍是 MySQL，但校验通过后**必须再跨一次服务边界**——
+  由 StatusServer 决定聊天服务器和 token。这是本项目的第一个"服务间调度"场景。
+
+### 下一步计划
+
+- `StatusServer::getChatServer()` 目前**先返回配置里的第一台**聊天服务器；
+  按连接数选最空闲那台的逻辑（从 Redis 的 `LOGIN_COUNT` 读各台连接数）已在代码里写好但处于**注释状态**，
+  等 ChatServer 落地后再启用。
+- `StatusServer::Login()`（校验 token）在网关侧的登录流程里还没被调用，
+  它的调用方是**即将新增的 ChatServer**——客户端拿 token 连 ChatServer 时用来验证身份、并踢掉重复登录。
+
+---
+
 ## 环境要求
 
 | 组件 | 版本 / 说明 |
 |---|---|
-| Visual Studio | 2022（v143 工具集），用于编译 CServer1 |
+| Visual Studio | 2022（v143 工具集），用于编译 CServer1 与 StatusServer |
 | vcpkg | 依赖：boost、protobuf、grpc、jsoncpp、hiredis |
+| MySQL | Connector/C++（`mysqlcppconn`），day3 起使用；库名 `llfc`，本机实测端口 3308 |
 | Qt | 6.8.x MinGW 64-bit（llfcchat） |
 | Node.js | 18+，用于 VarifyServer |
-| Redis | day2 起使用，用于缓存验证码（本机实测端口 6380） |
+| Redis | day2 起用于缓存验证码，day4 起还用于存放登录 token（本机实测端口 6380） |
 | 163 邮箱 | 需开启 SMTP 并获取授权码 |
 
-> CServer1 目前**尚未接入 MySQL**，用户表查询在代码中是注释状态。
+> `mysqlcppconn-9-vs14.dll` / `mysqlcppconn8-2-vs14.dll` 是 CServer1、StatusServer 运行期需要的动态库
+> （合计约 25 MB），属于二进制产物，**未提交**。自己跑的话需要自备 MySQL Connector/C++，
+> 并把这两个 DLL 放到可执行文件旁边。
 
 ---
 
@@ -221,11 +306,48 @@ Port=8080
 [VarifyServer]
 Host=127.0.0.1
 Port=50051
+[StatusServer]
+Host=127.0.0.1
+Port=50052
+[Mysql]
+Host=127.0.0.1
+Port=3308
+User=llfc
+Passwd=123456
+Schema=llfc
 [Redis]
 Host=127.0.0.1
 Port=6380
 Passwd=123456
 ```
+
+### StatusServer（状态服务器）
+
+```bash
+# 用 VS2022 打开 StatusServer.sln，直接生成
+msbuild StatusServer.sln /p:Configuration=Debug /p:Platform=x64
+```
+
+同样需要 `config.ini` 与可执行文件同目录。它比 CServer1 的配置多了聊天服务器列表：
+
+```ini
+[StatusServer]
+Port=50052
+Host=0.0.0.0
+[chatservers]
+Name=chatserver1,chatserver2
+[chatserver1]
+Name=chatserver1
+Host=127.0.0.1
+Port=8990
+[chatserver2]
+Name=chatserver2
+Host=127.0.0.1
+Port=8991
+```
+
+> day4 阶段 ChatServer 还没写，`[chatserver1]` / `[chatserver2]` 是预留位置：
+> 状态服务会从中挑一台返回给客户端，端口先占着 8990 / 8991。
 
 ### VarifyServer（验证码服务）
 
@@ -252,10 +374,11 @@ node server.js
 - 163 邮箱账号与 **SMTP 授权码**
 - Redis 连接密码
 
-仓库里提供的是模板 [`day2/VarifyServer/config.example.json`](day2/VarifyServer/config.example.json)。首次使用请复制并填写自己的信息：
+仓库里提供的是模板 [`day4/VarifyServer/config.example.json`](day4/VarifyServer/config.example.json)
+（每个 `dayN/VarifyServer/` 下都放了一份）。首次使用请复制并填写自己的信息：
 
 ```bash
-cd day2/VarifyServer
+cd day4/VarifyServer
 cp config.example.json config.json
 # 然后编辑 config.json，填入自己的邮箱、授权码、Redis 密码
 ```
@@ -270,13 +393,26 @@ Port=8080
 [VarifyServer]
 Host=127.0.0.1
 Port=50051
+[StatusServer]
+Host=127.0.0.1
+Port=50052
+[Mysql]
+Host=127.0.0.1
+Port=3308
+User=llfc
+Passwd=123456
+Schema=llfc
 [Redis]
 Host=127.0.0.1
-Passwd=123456
 Port=6380
+Passwd=123456
 ```
 
-> 上面是本地开发的占位值。若你往这里填了**自己的服务器地址或真实密码**，请注意本仓库是**公开仓库**，
+### StatusServer/config.ini —— 已提交，请按需修改
+
+`day4/StatusServer/config.ini` 同样是本地占位值，多了 `[chatservers]` 列表（见上文「编译 / 运行」）。
+
+> 以上都是本地开发的占位值。若你往这里填了**自己的服务器地址或真实密码**，请注意本仓库是**公开仓库**，
 > 提交前务必先脱敏（改成 `127.0.0.1` / `your_password` 之类）。
 
 ---
@@ -284,10 +420,12 @@ Port=6380
 ## 说明与约定
 
 1. **不提交构建产物**：`.vs/`、`x64/`、`build/`、`node_modules/`、`moc_*`、`ui_*.h`、`*.pdb`、`*.ilk` 等全部忽略。
-   （原始工程目录含约 3 GB 的 VS 缓存，本仓库每个 day 目录只保留约 1 MB 的源码。）
+   （day4 四个工程的原始目录合计约 7 GB，其中绝大部分是 VS 的 `ipch` 预编译头与 `.pdb`；
+   过滤后每个 day 目录只保留几 MB 的源码与资源。）
 2. **protobuf 生成文件是提交的**：`message.pb.h/.cc`、`message.grpc.pb.h/.cc` 由 `protoc` 从 `message.proto` 生成。
    保留它们是为了让仓库克隆后可直接编译（Windows 上配置 protoc + grpc_cpp_plugin 较繁琐）。
    如果你更倾向"只提交 .proto"，把它们加进 `.gitignore` 并补充生成命令即可。
 3. **`*.vcxproj.user`、`*.vcxproj.bak` 未提交**：前者是个人环境配置，后者是备份文件。
-4. **两份 `message.proto` 必须同步**：`CServer1/message.proto` 与 `VarifyServer/message.proto` 是各自独立的拷贝，
-   改接口时两边都要改，否则 gRPC 会出现字段不匹配。
+4. **多份 `message.proto` 必须同步**：`CServer1/message.proto`、`VarifyServer/message.proto`、
+   `StatusServer/message.proto` 是各自独立的拷贝，改接口时**每一份都要改**，否则 gRPC 会出现字段不匹配。
+5. **二进制依赖不提交**：`mysqlcppconn*.dll`（MySQL Connector/C++）被排除在外，需要自行准备。
