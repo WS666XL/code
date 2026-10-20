@@ -1,0 +1,408 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{5E4D7575-1FCE-34F2-A4DA-E9626DB101DF}</ProjectGuid>
+    <RootNamespace>llfcchat</RootNamespace>
+    <Keyword>QtVS_v304</Keyword>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformMinVersion>10.0.26100.0</WindowsTargetPlatformMinVersion>
+    <QtMsBuild Condition="'$(QtMsBuild)'=='' OR !Exists('$(QtMsBuild)\qt.targets')">$(MSBuildProjectDirectory)\QtMsBuild</QtMsBuild>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <PlatformToolset>v143</PlatformToolset>
+    <OutputDirectory>bin\</OutputDirectory>
+    <ATLMinimizesCRunTimeLibraryUsage>false</ATLMinimizesCRunTimeLibraryUsage>
+    <CharacterSet>NotSet</CharacterSet>
+    <ConfigurationType>Application</ConfigurationType>
+    <IntermediateDirectory>release\</IntermediateDirectory>
+    <PrimaryOutput>llfcchat</PrimaryOutput>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <PlatformToolset>v143</PlatformToolset>
+    <OutputDirectory>bin\</OutputDirectory>
+    <ATLMinimizesCRunTimeLibraryUsage>false</ATLMinimizesCRunTimeLibraryUsage>
+    <CharacterSet>NotSet</CharacterSet>
+    <ConfigurationType>Application</ConfigurationType>
+    <IntermediateDirectory>debug\</IntermediateDirectory>
+    <PrimaryOutput>llfcchat</PrimaryOutput>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="$(QtMsBuild)\qt_defaults.props" Condition="Exists('$(QtMsBuild)\qt_defaults.props')" />
+  <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <QtInstall>msvc2022</QtInstall>
+    <QtModules>core;gui;network;widgets</QtModules>
+  </PropertyGroup>
+  <PropertyGroup Label="QtSettings" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <QtInstall>msvc2022</QtInstall>
+    <QtModules>core;gui;network;widgets</QtModules>
+  </PropertyGroup>
+  <Target Name="QtMsBuildNotFound" BeforeTargets="CustomBuild;ClCompile" Condition="!Exists('$(QtMsBuild)\qt.targets') OR !Exists('$(QtMsBuild)\Qt.props')">
+    <Message Importance="High" Text="QtMsBuild: could not locate qt.targets, qt.props; project may not build correctly." />
+  </Target>
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" />
+    <Import Project="$(QtMsBuild)\Qt.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">bin\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">release\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">llfcchat</TargetName>
+    <IgnoreImportLibrary Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</IgnoreImportLibrary>
+    <LinkIncremental Condition="'$(Configuration)|$(Platform)'=='Release|x64'">false</LinkIncremental>
+    <PostBuildEventUseInBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</PostBuildEventUseInBuild>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">bin\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">debug\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">llfcchat</TargetName>
+    <IgnoreImportLibrary Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</IgnoreImportLibrary>
+    <PostBuildEventUseInBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</PostBuildEventUseInBuild>
+  </PropertyGroup>
+  <PropertyGroup Label="QtMocPreprocessDefines" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <QtMocPreprocessDefinesCommand>cl -Bx"$(QTDIR)\bin\qmake.exe" -nologo -Zc:wchar_t -FS -Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr /wd4819 /utf-8 -O2 -MD -std:c++17 -utf-8 -W3 -w34100 -w34189 -w44456 -w44457 -w44458 -wd4577 -wd4467 -E $(QTDIR)\mkspecs\features\data\dummy.cpp 2&gt;NUL &gt;$(IntDir)\moc_predefs.h</QtMocPreprocessDefinesCommand>
+    <QtMocPreprocessDefinesInputs>$(QTDIR)\mkspecs\features\data\dummy.cpp</QtMocPreprocessDefinesInputs>
+    <QtMocPreprocessDefinesOutputs>$(IntDir)\moc_predefs.h</QtMocPreprocessDefinesOutputs>
+    <QtMocPreprocessDefinesMessage>Generate moc_predefs.h</QtMocPreprocessDefinesMessage>
+  </PropertyGroup>
+  <PropertyGroup Label="QtMocPreprocessDefines" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <QtMocPreprocessDefinesCommand>cl -Bx"$(QTDIR)\bin\qmake.exe" -nologo -Zc:wchar_t -FS -Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr /wd4819 /utf-8 -Zi -MDd -std:c++17 -utf-8 -W3 -w34100 -w34189 -w44456 -w44457 -w44458 -wd4577 -wd4467 -E $(QTDIR)\mkspecs\features\data\dummy.cpp 2&gt;NUL &gt;$(IntDir)\moc_predefs.h</QtMocPreprocessDefinesCommand>
+    <QtMocPreprocessDefinesInputs>$(QTDIR)\mkspecs\features\data\dummy.cpp</QtMocPreprocessDefinesInputs>
+    <QtMocPreprocessDefinesOutputs>$(IntDir)\moc_predefs.h</QtMocPreprocessDefinesOutputs>
+    <QtMocPreprocessDefinesMessage>Generate moc_predefs.h</QtMocPreprocessDefinesMessage>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;release;/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr /utf-8 -utf-8 -w34100 -w34189 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
+      <AssemblerListingLocation>release\</AssemblerListingLocation>
+      <BrowseInformation>false</BrowseInformation>
+      <DebugInformationFormat>None</DebugInformationFormat>
+      <DisableSpecificWarnings>4819;4577;4467;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <ObjectFileName>release\</ObjectFileName>
+      <Optimization>MaxSpeed</Optimization>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessToFile>false</PreprocessToFile>
+      <ProgramDataBaseFileName></ProgramDataBaseFileName>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>Level3</WarningLevel>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>$(QTDIR)\lib\Qt6EntryPoint.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
+      <DataExecutionPrevention>true</DataExecutionPrevention>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <IgnoreImportLibrary>true</IgnoreImportLibrary>
+      <LinkIncremental>false</LinkIncremental>
+      <OptimizeReferences>true</OptimizeReferences>
+      <OutputFile>$(OutDir)\llfcchat.exe</OutputFile>
+      <RandomizedBaseAddress>true</RandomizedBaseAddress>
+      <SubSystem>Windows</SubSystem>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+    </Link>
+    <Midl>
+      <DefaultCharType>Unsigned</DefaultCharType>
+      <EnableErrorChecks>None</EnableErrorChecks>
+      <WarningLevel>0</WarningLevel>
+    </Midl>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;NDEBUG;QT_NO_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+    <PostBuildEvent>
+      <Command>copy /Y ".\config.ini" ".\.\bin" xcopy /Y /E /I ".\static" ".\.\bin\static\"</Command>
+      <Message>copy /Y ".\config.ini" ".\.\bin" xcopy /Y /E /I ".\static" ".\.\bin\static\"</Message>
+    </PostBuildEvent>
+    <QtMoc>
+      <CompilerFlavor>msvc</CompilerFlavor>
+      <Include>./$(Configuration)/moc_predefs.h</Include>
+      <ExecutionDescription>Moc'ing %(Identity)...</ExecutionDescription>
+      <DynamicSource>output</DynamicSource>
+      <QtMocDir>$(Configuration)</QtMocDir>
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtRcc>
+      <InitFuncName>rc</InitFuncName>
+      <Compression>default</Compression>
+      <NoZstd>true</NoZstd>
+      <ExecutionDescription>Rcc'ing %(Identity)...</ExecutionDescription>
+      <QtRccDir>$(Configuration)</QtRccDir>
+      <QtRccFileName>qrc_%(Filename).cpp</QtRccFileName>
+    </QtRcc>
+    <QtUic>
+      <ExecutionDescription>Uic'ing %(Identity)...</ExecutionDescription>
+      <QtUicDir>$(ProjectDir)</QtUicDir>
+      <QtUicFileName>ui_%(Filename).h</QtUicFileName>
+    </QtUic>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>GeneratedFiles\$(ConfigurationName);GeneratedFiles;.;debug;/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>-Zc:rvalueCast -Zc:inline -Zc:strictStrings -Zc:throwingNew -permissive- -Zc:__cplusplus -Zc:externConstexpr /utf-8 -utf-8 -w34100 -w34189 -w44456 -w44457 -w44458 %(AdditionalOptions)</AdditionalOptions>
+      <AssemblerListingLocation>debug\</AssemblerListingLocation>
+      <BrowseInformation>false</BrowseInformation>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <DisableSpecificWarnings>4819;4577;4467;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <ObjectFileName>debug\</ObjectFileName>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessToFile>false</PreprocessToFile>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <UseFullPaths>false</UseFullPaths>
+      <WarningLevel>Level3</WarningLevel>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>$(QTDIR)\lib\Qt6EntryPointd.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>"/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' publicKeyToken='6595b64144ccf1df' language='*' processorArchitecture='*'" %(AdditionalOptions)</AdditionalOptions>
+      <DataExecutionPrevention>true</DataExecutionPrevention>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <IgnoreImportLibrary>true</IgnoreImportLibrary>
+      <OutputFile>$(OutDir)\llfcchat.exe</OutputFile>
+      <RandomizedBaseAddress>true</RandomizedBaseAddress>
+      <SubSystem>Windows</SubSystem>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+    </Link>
+    <Midl>
+      <DefaultCharType>Unsigned</DefaultCharType>
+      <EnableErrorChecks>None</EnableErrorChecks>
+      <WarningLevel>0</WarningLevel>
+    </Midl>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_WINDOWS;UNICODE;_UNICODE;WIN32;_ENABLE_EXTENDED_ALIGNED_STORAGE;WIN64;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+    <PostBuildEvent>
+      <Command>copy /Y ".\config.ini" ".\.\bin" &amp; xcopy /Y /E /I ".\static" ".\.\bin\static\"</Command>
+      <Message>copy /Y ".\config.ini" ".\.\bin" &amp; xcopy /Y /E /I ".\static" ".\.\bin\static\"</Message>
+    </PostBuildEvent>
+    <QtMoc>
+      <CompilerFlavor>msvc</CompilerFlavor>
+      <Include>./$(Configuration)/moc_predefs.h</Include>
+      <ExecutionDescription>Moc'ing %(Identity)...</ExecutionDescription>
+      <DynamicSource>output</DynamicSource>
+      <QtMocDir>$(Configuration)</QtMocDir>
+      <QtMocFileName>moc_%(Filename).cpp</QtMocFileName>
+    </QtMoc>
+    <QtRcc>
+      <InitFuncName>rc</InitFuncName>
+      <Compression>default</Compression>
+      <NoZstd>true</NoZstd>
+      <ExecutionDescription>Rcc'ing %(Identity)...</ExecutionDescription>
+      <QtRccDir>$(Configuration)</QtRccDir>
+      <QtRccFileName>qrc_%(Filename).cpp</QtRccFileName>
+    </QtRcc>
+    <QtUic>
+      <ExecutionDescription>Uic'ing %(Identity)...</ExecutionDescription>
+      <QtUicDir>$(ProjectDir)</QtUicDir>
+      <QtUicFileName>ui_%(Filename).h</QtUicFileName>
+    </QtUic>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="adduseritem.cpp" />
+    <ClCompile Include="applyfriend.cpp" />
+    <ClCompile Include="applyfrienditem.cpp" />
+    <ClCompile Include="applyfriendlist.cpp" />
+    <ClCompile Include="applyfriendpage.cpp" />
+    <ClCompile Include="authenfriend.cpp" />
+    <ClCompile Include="bubbleframe.cpp" />
+    <ClCompile Include="chatdialog.cpp" />
+    <ClCompile Include="chatitembase.cpp" />
+    <ClCompile Include="chatpage.cpp" />
+    <ClCompile Include="chatuserlist.cpp" />
+    <ClCompile Include="chatuserwid.cpp" />
+    <ClCompile Include="chatview.cpp" />
+    <ClCompile Include="clickedbtn.cpp" />
+    <ClCompile Include="clickedlabel.cpp" />
+    <ClCompile Include="clickedoncelabel.cpp" />
+    <ClCompile Include="contactuserlist.cpp" />
+    <ClCompile Include="conuseritem.cpp" />
+    <ClCompile Include="customizeedit.cpp" />
+    <ClCompile Include="findfaildlg.cpp" />
+    <ClCompile Include="findsuccessdlg.cpp" />
+    <ClCompile Include="friendinfopage.cpp" />
+    <ClCompile Include="friendlabel.cpp" />
+    <ClCompile Include="global.cpp" />
+    <ClCompile Include="grouptipitem.cpp" />
+    <ClCompile Include="httpmgr.cpp" />
+    <ClCompile Include="listitembase.cpp" />
+    <ClCompile Include="loadingdlg.cpp" />
+    <ClCompile Include="logindialog.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="mainwindow.cpp" />
+    <ClCompile Include="messagetextedit.cpp" />
+    <ClCompile Include="picturebubble.cpp" />
+    <ClCompile Include="registerdialog.cpp" />
+    <ClCompile Include="resetdialog.cpp" />
+    <ClCompile Include="searchlist.cpp" />
+    <ClCompile Include="statewidget.cpp" />
+    <ClCompile Include="tcpmgr.cpp" />
+    <ClCompile Include="textbubble.cpp" />
+    <ClCompile Include="timerbtn.cpp" />
+    <ClCompile Include="userdata.cpp" />
+    <ClCompile Include="usermgr.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <QtMoc Include="adduseritem.h" />
+    <QtMoc Include="applyfriend.h" />
+    <QtMoc Include="applyfrienditem.h" />
+    <QtMoc Include="applyfriendlist.h" />
+    <QtMoc Include="applyfriendpage.h" />
+    <QtMoc Include="authenfriend.h" />
+    <QtMoc Include="bubbleframe.h" />
+    <QtMoc Include="chatdialog.h" />
+    <QtMoc Include="chatitembase.h" />
+    <QtMoc Include="chatpage.h" />
+    <QtMoc Include="chatuserlist.h" />
+    <QtMoc Include="chatuserwid.h" />
+    <QtMoc Include="chatview.h" />
+    <QtMoc Include="clickedbtn.h" />
+    <QtMoc Include="clickedlabel.h" />
+    <QtMoc Include="clickedoncelabel.h" />
+    <QtMoc Include="contactuserlist.h" />
+    <QtMoc Include="conuseritem.h" />
+    <QtMoc Include="customizeedit.h" />
+    <QtMoc Include="findfaildlg.h" />
+    <QtMoc Include="findsuccessdlg.h" />
+    <QtMoc Include="friendinfopage.h" />
+    <QtMoc Include="friendlabel.h" />
+    <ClInclude Include="global.h" />
+    <QtMoc Include="grouptipitem.h" />
+    <QtMoc Include="httpmgr.h" />
+    <QtMoc Include="listitembase.h" />
+    <QtMoc Include="loadingdlg.h" />
+    <QtMoc Include="logindialog.h" />
+    <QtMoc Include="mainwindow.h" />
+    <QtMoc Include="messagetextedit.h" />
+    <QtMoc Include="picturebubble.h" />
+    <QtMoc Include="registerdialog.h" />
+    <QtMoc Include="resetdialog.h" />
+    <QtMoc Include="searchlist.h" />
+    <ClInclude Include="singleton.h" />
+    <QtMoc Include="statewidget.h" />
+    <QtMoc Include="tcpmgr.h" />
+    <QtMoc Include="textbubble.h" />
+    <ClInclude Include="timerbtn.h" />
+    <ClInclude Include="userdata.h" />
+    <QtMoc Include="usermgr.h" />
+  </ItemGroup>
+  <ItemGroup />
+  <ItemGroup>
+    <QtUic Include="adduseritem.ui" />
+    <QtUic Include="applyfriend.ui" />
+    <QtUic Include="applyfrienditem.ui" />
+    <QtUic Include="applyfriendpage.ui" />
+    <QtUic Include="authenfriend.ui" />
+    <QtUic Include="chatdialog.ui" />
+    <QtUic Include="chatpage.ui" />
+    <QtUic Include="chatuserwid.ui" />
+    <QtUic Include="conuseritem.ui" />
+    <QtUic Include="findfaildlg.ui" />
+    <QtUic Include="findsuccessdlg.ui" />
+    <QtUic Include="friendinfopage.ui" />
+    <QtUic Include="friendlabel.ui" />
+    <QtUic Include="grouptipitem.ui" />
+    <QtUic Include="loadingdlg.ui" />
+    <QtUic Include="logindialog.ui" />
+    <QtUic Include="mainwindow.ui" />
+    <QtUic Include="registerdialog.ui" />
+    <QtUic Include="resetdialog.ui" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="res\add_friend.png" />
+    <None Include="res\add_friend_hover.png" />
+    <None Include="res\add_friend_normal.png" />
+    <None Include="res\addtip.png" />
+    <None Include="res\arowdown.png" />
+    <None Include="res\chat_icon.png" />
+    <None Include="res\chat_icon_hover.png" />
+    <None Include="res\chat_icon_press.png" />
+    <None Include="res\chat_icon_select_hover.png" />
+    <None Include="res\chat_icon_select_press.png" />
+    <None Include="res\close_search.png" />
+    <None Include="res\close_transparent.png" />
+    <None Include="res\contact_list.png" />
+    <None Include="res\contact_list_hover.png" />
+    <None Include="res\contact_list_press.png" />
+    <None Include="res\female.png" />
+    <None Include="res\filedir.png" />
+    <None Include="res\filedir_hover.png" />
+    <None Include="res\filedir_press.png" />
+    <None Include="res\gdjd.jpg" />
+    <None Include="res\head_1.jpg" />
+    <None Include="res\head_2.jpg" />
+    <None Include="res\head_3.jpg" />
+    <None Include="res\head_4.jpg" />
+    <None Include="res\head_5.jpg" />
+    <None Include="hua.jpg" />
+    <None Include="res\ice.png" />
+    <None Include="img.jpg" />
+    <None Include="res\loading.gif" />
+    <None Include="res\loading2.gif" />
+    <None Include="res\male.png" />
+    <None Include="res\msg_chat_hover.png" />
+    <None Include="res\msg_chat_normal.png" />
+    <None Include="res\msg_chat_press.png" />
+    <QtRcc Include="rc.qrc" />
+    <None Include="res\readed.png" />
+    <None Include="res\red_point.png" />
+    <None Include="res\right_tip.png" />
+    <None Include="res\search.png" />
+    <None Include="res\send_fail.png" />
+    <None Include="res\settings.png" />
+    <None Include="res\settings_hover.png" />
+    <None Include="res\settings_press.png" />
+    <None Include="res\settings_select_hover.png" />
+    <None Include="res\settings_select_press.png" />
+    <None Include="res\smile.png" />
+    <None Include="res\smile_hover.png" />
+    <None Include="res\smile_press.png" />
+    <None Include="style\stylesheet.qss" />
+    <None Include="res\tipclose.png" />
+    <None Include="res\unread.png" />
+    <None Include="res\unvisible.png" />
+    <None Include="res\unvisible_hover.png" />
+    <None Include="res\video_chat_hover.png" />
+    <None Include="res\video_chat_normal.png" />
+    <None Include="res\video_chat_press.png" />
+    <None Include="res\visible.png" />
+    <None Include="res\visible_hover.png" />
+    <None Include="res\voice_chat_hover.png" />
+    <None Include="res\voice_chat_normal.png" />
+    <None Include="res\voice_chat_press.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="config.ini" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include=".\llfcchat_resource.rc" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="$(QtMsBuild)\qt.targets" Condition="Exists('$(QtMsBuild)\qt.targets')" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>
