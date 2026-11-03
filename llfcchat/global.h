@@ -15,6 +15,8 @@
 // 必须 unpolish(取消)+polish(重新应用) 一次，控件才会按新属性重绘。
 extern std::function<void(QWidget*)>repolish;
 extern std::function<QString(QString)>xorString;
+// 头像统一加载入口：原图只解码一次并缓存，再缩放到目标尺寸（见 global.cpp）
+QPixmap LoadAvatarPixmap(const QString& path, const QSize& size);
 // 请求 ID：标识"这是哪一次操作"，服务器返回时靠它找到对应的处理逻辑
 enum ReqId{
     ID_GET_VARIFY_CODE = 1001, //获取验证码
@@ -116,7 +118,10 @@ inline std::vector<QString> heads = {
     ":/res/head_2.jpg",
     ":/res/head_3.jpg",
     ":/res/head_4.jpg",
-    ":/res/head_5.jpg"
+    ":/res/head_5.jpg",
+    ":/res/head_6.jpg",
+    ":/res/head_7.jpg",
+    ":/res/head_8.jpg"
 };
 
 inline std::vector<QString> names = {

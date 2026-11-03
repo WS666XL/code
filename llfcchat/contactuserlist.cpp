@@ -239,13 +239,14 @@ void ContactUserList::slot_auth_rsp(std::shared_ptr<AuthRsp> auth_rsp)//你自�
     if(isFriend){
         return;
     }
-    // 在 groupitem 之后插入新项
-    int randomValue = QRandomGenerator::global()->bounded(100); // 生成0到99之间的随机整数
-    int str_i = randomValue%strs.size();
-    int head_i = randomValue%heads.size();
 
     auto *con_user_wid = new ConUserItem();
-    con_user_wid->SetInfo(auth_rsp->_uid ,auth_rsp->_name, heads[head_i]);
+    // 用服务端下发的真实头像；为空时按 uid 固定回退（不再随机）
+    QString icon = auth_rsp->_icon;
+    if (icon.isEmpty()) {
+        icon = heads[auth_rsp->_uid % heads.size()];
+    }
+    con_user_wid->SetInfo(auth_rsp->_uid ,auth_rsp->_name, icon);
     QListWidgetItem *item = new QListWidgetItem;
     //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
     item->setSizeHint(con_user_wid->sizeHint());

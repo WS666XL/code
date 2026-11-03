@@ -52,9 +52,15 @@ ChatDialog::ChatDialog(QWidget *parent)
     connect(ui->chat_user_list,&ChatUserList::sig_loading_chat_user,this,&ChatDialog::slot_loading_chat_user);
     addChatUserList();
 
-    QPixmap pixmap(":/res/head_1.jpg");
-    QPixmap scaledPixmap =pixmap.scaled(ui->side_head_lb->size(),Qt::KeepAspectRatio);
-    ui->side_head_lb->setPixmap(scaledPixmap);
+    // 自己的头像用登录响应里服务端下发的 icon（数据库配置），
+    // 拿不到时回退到默认头像
+    QString self_icon = ":/res/head_1.jpg";
+    if (auto self_info = UserMgr::GetInstance()->GetUserInfo()) {
+        if (!self_info->_icon.isEmpty()) {
+            self_icon = self_info->_icon;
+        }
+    }
+    ui->side_head_lb->setPixmap(LoadAvatarPixmap(self_icon, ui->side_head_lb->size()));
     ui->side_head_lb->setScaledContents(true);
 
     ui->side_chat_lb->setProperty("state","normal");
@@ -404,6 +410,10 @@ void ChatDialog::slot_auth_rsp(std::shared_ptr<AuthRsp> auth_rsp)
     qDebug() << "receive slot_auth_rsp uid is " << auth_rsp->_uid
              << " name is " << auth_rsp->_name << " nick is " << auth_rsp->_nick;
 
+    // 同意好友完成，"新的朋友"未读红点随之熄灭（必须在提前 return 之前，保证每次回包都熄灭）
+    ui->side_contact_lb->ShowRedPoint(false);
+    ui->con_user_list->ShowRedPoint(false);
+
     //判断如果已经是好友则跳过
     auto bfriend = UserMgr::GetInstance()->CheckFriendById(auth_rsp->_uid);
     if(bfriend){
@@ -411,6 +421,7 @@ void ChatDialog::slot_auth_rsp(std::shared_ptr<AuthRsp> auth_rsp)
     }
 
     UserMgr::GetInstance()->AddFriend(auth_rsp);
+
     int randomValue = QRandomGenerator::global()->bounded(100); // 生成0到99之间的随机整数
     int str_i = randomValue % strs.size();
     int head_i = randomValue % heads.size();
@@ -611,6 +622,12 @@ void ChatDialog::slot_text_chat_msg(std::shared_ptr<TextChatMsg> msg)
     auto* chat_user_wid = new ChatUserWid();
     //查询好友信息
     auto fi_ptr = UserMgr::GetInstance()->GetFriendById(msg->_from_uid);
+    if (!fi_ptr) {
+        // 非好友消息（如数据库被清后的内存残留状态），直接丢弃，避免空指针崩溃
+        qDebug() << "text msg from non-friend uid " << msg->_from_uid << ", dropped";
+        delete chat_user_wid;
+        return;
+    }
     chat_user_wid->SetInfo(fi_ptr);
     QListWidgetItem* item = new QListWidgetItem;
     //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();

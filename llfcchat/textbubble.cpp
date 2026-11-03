@@ -1,4 +1,4 @@
-#include "TextBubble.h"
+#include "textbubble.h"
 #include <QFontMetricsF>
 #include <QDebug>
 #include <QFont>
@@ -54,7 +54,9 @@ void TextBubble::setPlainText(const QString &text)
         max_width = max_width < txtW ? txtW : max_width;                 //找到最长的那段
     }
     //设置这个气泡的最大宽度 只需要设置一次
-    setMaximumWidth(max_width + doc_margin * 2 + (margin_left + margin_right));        //设置最大宽度
+    // 额外加 15px 余量：不同平台回退字体的渲染宽度可能略大于度量值，
+    // 精确计算会导致末尾一两个字符被挤到第二行
+    setMaximumWidth(max_width + doc_margin * 2 + (margin_left + margin_right) + 15);        //设置最大宽度
     //
 }
 

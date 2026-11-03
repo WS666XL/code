@@ -138,6 +138,8 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 RESOURCES += \
     rc.qrc
 
+    # Windows 专用后置拷贝（copy/xcopy 是 Windows 命令，Linux 下必须跳过）
+    win32 {
     CONFIG(debug, debug | release) {
         #指定要拷贝的文件目录为工程目录下release目录下的所有dll、lib文件，例如工程目录在D:\QT\Test
         #PWD就为D:/QT/Test，DllFile = D:/QT/Test/release/*.dll
@@ -180,6 +182,7 @@ RESOURCES += \
         # 使用xcopy命令拷贝文件夹，/E表示拷贝子目录及其内容，包括空目录。/I表示如果目标不存在则创建目录。/Y表示覆盖现有文件而不提示。
          QMAKE_POST_LINK += xcopy /Y /E /I \"$$StaticDir\" \"$$OutputDir\\static\\\"
     }
+    } # win32
 
     win32-msvc*:QMAKE_CXXFLAGS += /wd"4819" /utf-8
 
@@ -197,6 +200,11 @@ RESOURCES += \
 #     #执行copy命令
 #     QMAKE_POST_LINK += copy /Y \"$$TargetConfig\" \"$$OutputDir\"
 # }
+
+# Linux: 把 config.ini 拷到可执行文件目录（main.cpp 从 exe 所在目录读取）
+unix:!macx {
+    QMAKE_POST_LINK += $$quote(cp -f $${PWD}/config.ini $${OUT_PWD}/$${DESTDIR}/)
+}
 
 DISTFILES += \
     config.ini

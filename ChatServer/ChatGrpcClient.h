@@ -6,6 +6,9 @@
 #include<json/value.h>
 #include<json/reader.h>
 #include<mutex>
+#include<thread>
+#include<condition_variable>
+#include<chrono>
 #include<queue>
 #include"Singleton.h"
 #include"const.h"

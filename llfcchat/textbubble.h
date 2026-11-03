@@ -2,7 +2,7 @@
 #define TEXTBUBBLE_H
 
 #include <QTextEdit>
-#include "BubbleFrame.h"
+#include "bubbleframe.h"
 #include <QHBoxLayout>
 
 /******************************************************************************

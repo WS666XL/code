@@ -1,5 +1,7 @@
 #include "chatuserwid.h"
 #include "ui_chatuserwid.h"
+#include "global.h"
+#include <QTime>
 
 ChatUserWid::ChatUserWid(QWidget *parent) :
     ListItemBase(parent),
@@ -31,31 +33,30 @@ ChatUserWid::~ChatUserWid()
 void ChatUserWid::SetInfo(std::shared_ptr<UserInfo> user_info)
 {
     _user_info = user_info;
-    // 加载图片
-    QPixmap pixmap(_user_info->_icon);
-
-    // 设置图片自动缩放
-    ui->icon_lb->setPixmap(pixmap.scaled(ui->icon_lb->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    // 加载图片（走全局缓存，避免同一头像反复解码+缩放）
+    ui->icon_lb->setPixmap(LoadAvatarPixmap(_user_info->_icon, ui->icon_lb->size()));
     ui->icon_lb->setScaledContents(true);
 
     ui->user_name_lb->setText(_user_info->_name);
     ui->user_chat_lb->setText(_user_info->_last_msg);
+    // 显示当前时间（.ui 里默认是占位文字"时间"，教程代码一直没更新它）
+    ui->label->setText(QTime::currentTime().toString("hh:mm"));
 }
 
 void ChatUserWid::SetInfo(std::shared_ptr<FriendInfo> friend_info)
 {
+    if (!friend_info) {
+        return;
+    }
     _user_info = std::make_shared<UserInfo>(friend_info);
-    // 加载图片
-    QPixmap pixmap(_user_info->_icon);
-
-    // 设置图片自动缩放
-    ui->icon_lb->setPixmap(pixmap.scaled(ui->icon_lb->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    // 加载图片（走全局缓存，避免同一头像反复解码+缩放）
+    ui->icon_lb->setPixmap(LoadAvatarPixmap(_user_info->_icon, ui->icon_lb->size()));
     ui->icon_lb->setScaledContents(true);
 
     ui->user_name_lb->setText(_user_info->_name);
     ui->user_chat_lb->setText(_user_info->_last_msg);
+    ui->label->setText(QTime::currentTime().toString("hh:mm"));
 }
-
 // void ChatUserWid::ShowRedPoint(bool bshow)
 // {
 //     if(bshow){

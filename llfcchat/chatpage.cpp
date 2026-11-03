@@ -4,8 +4,8 @@
 #include<QPainter>
 #include<QTextEdit>
 #include"chatitembase.h"
-#include"TextBubble.h"
-#include"PictureBubble.h"
+#include"textbubble.h"
+#include"picturebubble.h"
 #include"usermgr.h"
 #include"tcpmgr.h"
 #include<QJsonDocument>
@@ -15,7 +15,6 @@ ChatPage::ChatPage(QWidget *parent)
 {
     ui->setupUi(this);
     //设置按钮样式
-    ui->receive_btn->SetState("normal","hover","press");
     ui->send_btn->SetState("normal","hover","press");
 
     //设置图标样式

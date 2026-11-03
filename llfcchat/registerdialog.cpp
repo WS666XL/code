@@ -2,7 +2,7 @@
 #include "ui_registerdialog.h"
 #include"global.h"
 #include"httpmgr.h"
-#include<qDebug>
+#include<QDebug>
 #include<QRandomGenerator>
 RegisterDialog::RegisterDialog(QWidget *parent)
     : QDialog(parent)

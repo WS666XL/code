@@ -1,6 +1,63 @@
 QDialog#LoginDialog,#RegisterDialog{
 background-color:rgb(255,255,255)
 }
+
+/* 自定义标题栏（无边框窗口）：图标 + 标题 + 最小化/最大化/关闭 */
+#title_bar{
+    background: #ffffff;
+    border-bottom: 1px solid #ececec;
+}
+#title_text{
+    color: #2e2f30;
+    font-size: 13px;
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
+}
+#btn_min,#btn_max,#btn_close{
+    background: transparent;
+    border: none;
+    color: #2e2f30;
+    font-size: 14px;
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
+    min-width: 40px;
+    min-height: 32px;
+    padding: 0px;
+}
+#btn_min:hover,#btn_max:hover{
+    background: #e5e5e5;
+}
+#btn_close:hover{
+    background: #e81123;
+    color: #ffffff;
+}
+
+/* 登录/注册输入框：细边框，替换 Linux 原生样式下的粗边框和蓝色聚焦圈 */
+#user_edit,#email_edit,#pass_edit,#confirm_edit,#varify_edit{
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 3px 6px;
+    background: #ffffff;
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
+}
+#email_edit:focus,#pass_edit:focus,#confirm_edit:focus,#user_edit:focus,#varify_edit:focus{
+    border: 1px solid #2a70f1;
+}
+
+/* 登录/注册按钮：扁平化，去掉 Linux 原生粗边框 */
+#login_btn,#reg_btn,#sure_btn,#concel_btn,#return_btn{
+    background: #f0f0f0;
+    color: #2e2f30;
+    border: none;
+    border-radius: 20px;
+    font-size: 16px;
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
+}
+#login_btn:hover,#reg_btn:hover,#sure_btn:hover,#concel_btn:hover,#return_btn:hover{
+    background: #d2d2d2;
+}
+#login_btn:pressed,#reg_btn:pressed,#sure_btn:pressed,#concel_btn:pressed,#return_btn:pressed{
+    background: #c6c6c6;
+}
+
 #user_lable,#pass_lable{
 
 color:black;
@@ -103,20 +160,20 @@ color:black;
 #user_chat_lb{
     color:rgb(153,153,153);
     font-size: 12px;
-    font-family: "Microsoft YaHei";
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
 }
 
 #user_name_lb{
     color:rgb(0,0,0);
     font-size: 14px;
     font-weight: normal;
-    font-family: "Microsoft YaHei";
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
 }
 
 #time_wid #time_lb{
    color:rgb(140,140,140);
    font-size: 12px;
-   font-family: "Microsoft YaHei";
+   font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
 }
 
 QScrollBar:vertical {
@@ -148,7 +205,7 @@ LoadingDlg{
 }
 
 #title_lb{
-    font-family: "Microsoft YaHei";
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
     font-size: 20px;
     font-weight: normal;
 }
@@ -156,7 +213,7 @@ LoadingDlg{
 #chatEdit{
     background: #ffffff;
     border: none; /* 隐藏边框 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     font-size: 18px; /* 设置字体大小 */
     padding: 5px; /* 设置内边距 */
 }
@@ -171,7 +228,7 @@ LoadingDlg{
    background: #f0f0f0;
    color: #2cb46e;
    font-size: 16px; /* 设置字体大小 */
-   font-family: "Microsoft YaHei"; /* 设置字体 */
+   font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
    border-radius: 20px; /* 设置圆角 */
 }
 
@@ -179,7 +236,7 @@ LoadingDlg{
    background: #d2d2d2;
    color: #2cb46e;
    font-size: 16px; /* 设置字体大小 */
-   font-family: "Microsoft YaHei"; /* 设置字体 */
+   font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
    border-radius: 20px; /* 设置圆角 */
 }
 
@@ -187,7 +244,7 @@ LoadingDlg{
    background: #c6c6c6;
    color: #2cb46e;
    font-size: 16px; /* 设置字体大小 */
-   font-family: "Microsoft YaHei"; /* 设置字体 */
+   font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
    border-radius: 20px; /* 设置圆角 */
 }
 
@@ -195,7 +252,7 @@ LoadingDlg{
     background: #f0f0f0;
     color: #2cb46e;
     font-size: 16px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
@@ -203,7 +260,7 @@ LoadingDlg{
    background: #d2d2d2;
    color: #2cb46e;
    font-size: 16px; /* 设置字体大小 */
-   font-family: "Microsoft YaHei"; /* 设置字体 */
+   font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
    border-radius: 20px; /* 设置圆角 */
 }
 
@@ -211,7 +268,7 @@ LoadingDlg{
    background: #c6c6c6;
    color: #2cb46e;
    font-size: 16px; /* 设置字体大小 */
-   font-family: "Microsoft YaHei"; /* 设置字体 */
+   font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
    border-radius: 20px; /* 设置圆角 */
 }
 
@@ -258,7 +315,7 @@ LoadingDlg{
 #chat_user_name{
     color:rgb(153,153,153);
     font-size: 14px;
-    font-family: "Microsoft YaHei";
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
 }
 #side_chat_lb[state='normal']{
     border-image: url(:/res/chat_icon.png);
@@ -352,7 +409,7 @@ LoadingDlg{
 
 #message_tip{
   text-align: center;
-  font-family: "Microsoft YaHei";
+  font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
   font-size: 12pt;
 }
 #FindSuccessDlg{
@@ -361,14 +418,14 @@ LoadingDlg{
 
 #name_lb{
     font-size: 14px;
-    font-family: "Microsoft YaHei";
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
 }
 
 #add_friend_btn[state='normal']{
     background: #07c160;
     color: #ffffff;
     font-size: 14px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
@@ -376,7 +433,7 @@ LoadingDlg{
     background: #3bbb4b;
     color: #ffffff;
     font-size: 14px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
@@ -384,7 +441,7 @@ LoadingDlg{
    background: #07c160;
    color: #ffffff;
    font-size: 14px; /* 设置字体大小 */
-   font-family: "Microsoft YaHei"; /* 设置字体 */
+   font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
    border-radius: 20px; /* 设置圆角 */
 }
 
@@ -406,7 +463,7 @@ LoadingDlg{
 }
 
 #scrollcontent #apply_lb{
-    font-family: "Microsoft YaHei";
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
     font-size: 16px;
     font-weight: normal;
 }
@@ -414,20 +471,20 @@ LoadingDlg{
 #apply_wid QLabel{
     color:rgb(140,140,140);
     font-size: 14px;
-    font-family: "Microsoft YaHei";
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
     height: 25px;
 }
 
 #apply_wid #name_ed, #apply_wid #back_ed{
     border: 1px solid #f7f7f8;
     font-size: 14px;
-    font-family: "Microsoft YaHei";
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
 }
 
 #apply_wid #lb_ed {
        border: none;
        font-size: 14px;
-       font-family: "Microsoft YaHei";
+       font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
 }
 
 #apply_wid #more_lb{
@@ -490,7 +547,7 @@ LoadingDlg{
     padding-left: 2px;
     color:rgb(153,153,153);
     font-size: 14px;
-    font-family: "Microsoft YaHei";
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
 }
 
 #gridWidget {
@@ -525,7 +582,7 @@ LoadingDlg{
     background: #f0f0f0;
     color: #2cb46e;
     font-size: 16px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
@@ -533,7 +590,7 @@ LoadingDlg{
     background: #d2d2d2;
     color: #2cb46e;
     font-size: 16px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
@@ -541,7 +598,7 @@ LoadingDlg{
     background: #c6c6c6;
     color: #2cb46e;
     font-size: 16px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
@@ -549,7 +606,7 @@ LoadingDlg{
     background: #f0f0f0;
     color: #2e2f30;
     font-size: 16px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
@@ -557,7 +614,7 @@ LoadingDlg{
     background: #d2d2d2;
     color: #2e2f30;
     font-size: 16px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
@@ -565,7 +622,7 @@ LoadingDlg{
     background: #c6c6c6;
     color: #2e2f30;
     font-size: 16px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
@@ -599,7 +656,7 @@ LoadingDlg{
 #GroupTipItem QLabel{
     color: #2e2f30;
     font-size: 12px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border: none;
 }
 
@@ -613,7 +670,7 @@ LoadingDlg{
 }
 
 #friend_apply_lb {
-    font-family: "Microsoft YaHei";
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
     font-size: 18px;
     font-weight: normal;
 }
@@ -639,14 +696,14 @@ ApplyFriendItem {
 ApplyFriendItem #user_chat_lb{
     color: #a2a2a2;
     font-size: 14px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
 }
 
 ApplyFriendItem #addBtn[state='normal'] {
     background-color: #d3d7d4;
     color: #2cb46e;
     font-size: 16px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
@@ -654,7 +711,7 @@ ApplyFriendItem #addBtn[state='hover'] {
     background-color: #D3D3D3;
     color: #2cb46e;
     font-size: 16px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
@@ -662,21 +719,21 @@ ApplyFriendItem #addBtn[state='press'] {
     background-color: #BEBEBE;
     color: #2cb46e;
     font-size: 16px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
 #already_add_lb{
     color:rgb(153,153,153);
     font-size:12px;
-    font-family: "Microsoft YaHei";
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
 }
 
 #user_name_lb{
     color:rgb(0,0,0);
     font-size:16px;
     font-weight:normal;
-    font-family: "Microsoft YaHei";
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
 }
 
 
@@ -698,14 +755,14 @@ ApplyFriendItem #addBtn[state='press'] {
 
 #fail_tip, #fail_tip2 {
     font-size: 14px;
-    font-family: "Microsoft YaHei";
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif;
 }
 
 #fail_sure_btn[state='normal']{
     background: #07c160;
     color: #ffffff;
     font-size: 14px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
@@ -713,7 +770,7 @@ ApplyFriendItem #addBtn[state='press'] {
     background: #3bbb4b;
     color: #ffffff;
     font-size: 14px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
     border-radius: 20px; /* 设置圆角 */
 }
 
@@ -721,14 +778,14 @@ ApplyFriendItem #addBtn[state='press'] {
    background: #07c160;
    color: #ffffff;
    font-size: 14px; /* 设置字体大小 */
-   font-family: "Microsoft YaHei"; /* 设置字体 */
+   font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
    border-radius: 20px; /* 设置圆角 */
 }
 
 #friend_info_page #name_lb {
     color: #161616;
     font-size: 18px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
 }
 
 #friend_info_page #nick_tip,
@@ -738,7 +795,7 @@ ApplyFriendItem #addBtn[state='press'] {
 {
     color: #161616;
     font-size: 14px; /* 设置字体大小 */
-    font-family: "Microsoft YaHei"; /* 设置字体 */
+    font-family: "Microsoft YaHei", "WenQuanYi Micro Hei", sans-serif; /* 设置字体 */
 }
 
 #msg_chat[state='normal'] {

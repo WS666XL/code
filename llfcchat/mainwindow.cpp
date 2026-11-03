@@ -1,17 +1,37 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include"tcpmgr.h"
+#include <QVBoxLayout>
+#include <QMouseEvent>
+#include <QWindow>
+
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
+    , _cur_center(nullptr)
 {
     ui->setupUi(this);
-    //创建一个CentralWidget, 并将其设置为MainWindow的中心部件
-    // 先把登录界面作为主窗口的中心部件，用户看到的就是登录页
+    // Linux/WSLg 的系统标题栏又丑又慢（点 X 关闭有延迟）：
+    // 整个窗口改为无边框，用自己画的标题栏（图标 + 标题 + 最小化/最大化/关闭）
+    setWindowFlags(Qt::Window | Qt::FramelessWindowHint);
+
+    // content_holder 里放一个布局，用来承载登录/注册/聊天等界面
+    _content_layout = new QVBoxLayout(ui->content_holder);
+    _content_layout->setContentsMargins(0, 0, 0, 0);
+    _content_layout->setSpacing(0);
+
+    // 标题栏图标 + 拖动事件
+    ui->title_icon->setPixmap(QPixmap(":/res/icon.png"));
+    ui->title_bar->installEventFilter(this);
+
+    // 标题栏三个按钮：最小化 / 最大化还原 / 关闭
+    connect(ui->btn_min, &QToolButton::clicked, this, &QWidget::showMinimized);
+    connect(ui->btn_max, &QToolButton::clicked, this, &MainWindow::SlotToggleMax);
+    connect(ui->btn_close, &QToolButton::clicked, this, &QWidget::close);
+
+    //创建一个内容页, 先把登录界面作为内容页，用户看到的就是登录页
     _login_dlg = new LoginDialog(this);
-     _login_dlg->setWindowFlags(Qt::CustomizeWindowHint | Qt::FramelessWindowHint);
-    setCentralWidget(_login_dlg); //mainwindow.ui有个CentralWidget
-    _login_dlg->show();
+    SetCenterWidget(_login_dlg);
 
     //创建和注册消息的链接
     // 登录界面点"注册" → 主窗口的 SlotSwitchReg 槽函数被调用
@@ -33,30 +53,58 @@ MainWindow::~MainWindow()
 
 }
 
-// 切换界面：把中心部件从登录界面换成注册界面
+// 切换内容页：旧的先隐藏并 deleteLater，再把新的塞进内容区布局
+// （原教程用 setCentralWidget 会直接 delete 旧界面，随后又访问旧指针，是 use-after-free）
+void MainWindow::SetCenterWidget(QWidget *w)
+{
+    if (_cur_center) {
+        _cur_center->hide();
+        _cur_center->deleteLater();
+    }
+    _content_layout->addWidget(w);
+    w->show();
+    _cur_center = w;
+}
+
+// 标题栏按住拖动窗口
+bool MainWindow::eventFilter(QObject *obj, QEvent *event)
+{
+    if (obj == ui->title_bar && event->type() == QEvent::MouseButtonPress) {
+        auto *me = static_cast<QMouseEvent*>(event);
+        if (me->button() == Qt::LeftButton && windowHandle()) {
+            windowHandle()->startSystemMove();   // 交给系统移动窗口
+        }
+    }
+    return QMainWindow::eventFilter(obj, event);
+}
+
+// 最大化 / 还原切换
+void MainWindow::SlotToggleMax()
+{
+    if (isMaximized()) {
+        showNormal();
+    } else {
+        showMaximized();
+    }
+}
+
+// 切换界面：把内容区换成注册界面
 void MainWindow::SlotSwitchReg()
 {
     _reg_dlg = new RegisterDialog(this);
 
-    _reg_dlg->setWindowFlags(Qt::CustomizeWindowHint|Qt::FramelessWindowHint);
-
     //连接注册界面返回登录信号
     connect(_reg_dlg, &RegisterDialog::sigSwitchLogin, this, &MainWindow::SlotSwitchLogin);
-    setCentralWidget(_reg_dlg);//另一个不用的界面会被析构
-    _login_dlg->hide();
-    _reg_dlg->show();
+    SetCenterWidget(_reg_dlg);
 }
 
 //从注册界面返回登录界面
 void MainWindow::SlotSwitchLogin()
 {
-    //创建一个CentralWidget, 并将其设置为MainWindow的中心部件
+    //创建一个内容页，把内容区换回登录界面
     _login_dlg = new LoginDialog(this);
-    _login_dlg->setWindowFlags(Qt::CustomizeWindowHint|Qt::FramelessWindowHint);
-    setCentralWidget(_login_dlg);
+    SetCenterWidget(_login_dlg);
 
-    _reg_dlg->hide();
-    _login_dlg->show();
     //连接登录界面注册信号
     connect(_login_dlg, &LoginDialog::switchRegister, this, &MainWindow::SlotSwitchReg);
     //连接登录界面忘记密码信号
@@ -66,26 +114,20 @@ void MainWindow::SlotSwitchLogin()
 
 void MainWindow::SlotSwitchReset()
 {
-    //创建一个CentralWidget, 并将其设置为MainWindow的中心部件
+    //创建一个内容页，把内容区换成重置密码界面
     _reset_dlg = new ResetDialog(this);
-    _reset_dlg->setWindowFlags(Qt::CustomizeWindowHint|Qt::FramelessWindowHint);
-    setCentralWidget(_reset_dlg);
+    SetCenterWidget(_reset_dlg);
 
-    _login_dlg->hide();
-    _reset_dlg->show();
     //注册返回登录信号和槽函数
     connect(_reset_dlg, &ResetDialog::switchLogin, this, &MainWindow::SlotSwitchLogin2);
 }
 
 void MainWindow::SlotSwitchLogin2()
 {
-    //创建一个CentralWidget, 并将其设置为MainWindow的中心部件
+    //创建一个内容页，把内容区换回登录界面
     _login_dlg = new LoginDialog(this);
-    _login_dlg->setWindowFlags(Qt::CustomizeWindowHint|Qt::FramelessWindowHint);
-    setCentralWidget(_login_dlg);
+    SetCenterWidget(_login_dlg);
 
-   if (_reset_dlg) _reset_dlg->hide();
-    _login_dlg->show();
     //连接登录界面注册信号
     connect(_login_dlg, &LoginDialog::switchRegister, this, &MainWindow::SlotSwitchReg);
     //连接登录界面忘记密码信号
@@ -95,10 +137,7 @@ void MainWindow::SlotSwitchLogin2()
 void MainWindow::SlotSwitchChat()
 {
     _chat_dlg = new ChatDialog();
-    _chat_dlg->setWindowFlags(Qt::CustomizeWindowHint|Qt::FramelessWindowHint);// 设置窗口标记：自定义窗口标题栏 + 无边框窗口
-    setCentralWidget(_chat_dlg);// 将聊天对话框设置为主窗口的中心部件
-    _chat_dlg->show();
-    _login_dlg->hide();
+    SetCenterWidget(_chat_dlg);      // 将聊天界面换入内容区
     this->setMinimumSize(QSize(1050,900));
     this->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
 }

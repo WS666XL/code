@@ -1,7 +1,7 @@
 ﻿#ifndef PICTUREBUBBLE_H
 #define PICTUREBUBBLE_H
 
-#include "BubbleFrame.h"
+#include "bubbleframe.h"
 #include <QHBoxLayout>
 #include <QPixmap>
 

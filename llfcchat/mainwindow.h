@@ -5,6 +5,7 @@
 #include"resetdialog.h"
 #include"chatdialog.h"
 #include <QMainWindow>
+#include <QVBoxLayout>
 
 /******************************************************************************
  *
@@ -30,17 +31,23 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
+protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;   // 标题栏拖动窗口
 public slots:
-    void SlotSwitchReg();   // 收到登录界面的 switchRegister 信号后，把中心部件换成注册界面
+    void SlotSwitchReg();   // 收到登录界面的 switchRegister 信号后，把内容区换成注册界面
     void SlotSwitchLogin();     // 从注册界面返回登录界面
     void SlotSwitchReset();     // 切到忘记密码（重置密码）界面
     void SlotSwitchLogin2();    // 从重置密码界面返回登录界面
     void SlotSwitchChat();
+    void SlotToggleMax();       // 标题栏最大化/还原按钮
 private:
-    Ui::MainWindow *ui;           // 主窗口自身的 UI（只是个空容器，真正的界面是三个对话框）
+    Ui::MainWindow *ui;           // 主窗口自身的 UI（无边框窗口：标题栏 + 内容区容器）
     LoginDialog * _login_dlg;      // 登录界面
     RegisterDialog* _reg_dlg;    // 注册界面
     ResetDialog*_reset_dlg;    // 重置密码界面
     ChatDialog* _chat_dlg;
+    QWidget* _cur_center;          // 当前内容区的界面
+    QVBoxLayout* _content_layout;  // 内容区布局
+    void SetCenterWidget(QWidget *w);  // 切换内容区界面
 };
 #endif // MAINWINDOW_H

@@ -1,5 +1,6 @@
 #include "applyfrienditem.h"
 #include "ui_applyfrienditem.h"
+#include "global.h"
 
 ApplyFriendItem::ApplyFriendItem(QWidget *parent) :
     ListItemBase(parent), ui(new Ui::ApplyFriendItem),
@@ -22,11 +23,8 @@ ApplyFriendItem::~ApplyFriendItem()
 void ApplyFriendItem::SetInfo(std::shared_ptr<ApplyInfo> apply_info)
 {
     _apply_info = apply_info;
-    // 加载图片
-    QPixmap pixmap(_apply_info->_icon);
-
-    // 设置图片自动缩放
-    ui->icon_lb->setPixmap(pixmap.scaled(ui->icon_lb->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    // 加载图片（走全局缓存，避免同一头像反复解码+缩放）
+    ui->icon_lb->setPixmap(LoadAvatarPixmap(_apply_info->_icon, ui->icon_lb->size()));
     ui->icon_lb->setScaledContents(true);
 
     ui->user_name_lb->setText(_apply_info->_name);

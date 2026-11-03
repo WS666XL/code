@@ -8,6 +8,8 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);          // 每个 Qt GUI 程序都必须有一个 QApplication
+    // 应用底色调成白色：窗口刚映射、Qt 还没画出第一帧时不会闪黑屏
+    a.setPalette(QColor(255, 255, 255));
     QFile qss(":/style/stylesheet.qss"); // 从资源文件(qrc)里读取样式表
 
     if( qss.open(QFile::ReadOnly))//只读
@@ -40,6 +42,10 @@ int main(int argc, char *argv[])
     QString gate_port = settings.value("GateServer/port").toString();
     // 拼成 "http://localhost:8080" 存进全局变量，各界面再用它拼具体接口
     gate_url_prefix = "http://"+gate_host+":"+gate_port;
+    // 窗口图标：Windows 下走 .pro 的 RC_ICONS（编译进 exe 资源），
+    // Linux 没有 .rc 机制，必须从 qrc 资源里设置。
+    // 注意：不能用 icon.ico —— Linux 下 Qt 缺 qico 插件解不了 ico，图标会显示成空白块
+    a.setWindowIcon(QIcon(":/res/icon.png"));
     MainWindow w;                        // 创建主窗口（它内部再创建登录/注册对话框）
     w.show();                            // 显示窗口
     return QCoreApplication::exec();     // 进入事件循环，程序在这里一直"挂着"直到窗口关闭

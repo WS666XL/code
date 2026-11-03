@@ -166,5 +166,6 @@ void StateWidget::AddRedPoint()
 
 void StateWidget::ShowRedPoint(bool show)
 {
-    _red_point->setVisible(true);
+    // 教程原代码无视 show 参数恒为 visible(true)，导致侧边栏红点永远无法熄灭
+    _red_point->setVisible(show);
 }

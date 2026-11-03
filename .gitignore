@@ -106,3 +106,8 @@ ChatServer2/ChatServer/
 CServer1/CServer1/
 StatusServer/StatusServer/
 llfcchat/llfcchat/
+
+# ---------- Linux 迁移新增 ----------
+/logs/
+llfcchat/.qmake.stash
+llfcchat/Makefile

@@ -30,12 +30,14 @@ ApplyFriendPage::~ApplyFriendPage()
 
 void ApplyFriendPage::AddNewApply(std::shared_ptr<AddFriendApply> apply)
 {
-    //先模拟头像随机，以后头像资源增加资源服务器后再显示
-    int randomValue = QRandomGenerator::global()->bounded(100); // 生成0到99之间的随机整数
-    int head_i = randomValue % heads.size();
+    // 优先用服务端下发的真实头像；拿不到时按 uid 固定取一张（不再随机）
+    QString icon = apply->_icon;
+    if (icon.isEmpty()) {
+        icon = heads[apply->_from_uid % heads.size()];
+    }
     auto* apply_item = new ApplyFriendItem();
     auto apply_info = std::make_shared<ApplyInfo>(apply->_from_uid,
-                                                  apply->_name, apply->_desc,heads[head_i], apply->_name, 0, 0);
+                                                  apply->_name, apply->_desc, icon, apply->_name, 0, 0);
     apply_item->SetInfo( apply_info);
     QListWidgetItem* item = new QListWidgetItem;
     //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
@@ -67,10 +69,11 @@ void ApplyFriendPage::loadApplyList()
     //添加好友申请
     auto apply_list = UserMgr::GetInstance()->GetApplyList();
     for(auto &apply: apply_list){
-        int randomValue = QRandomGenerator::global()->bounded(100); // 生成0到99之间的随机整数
-        int head_i = randomValue % heads.size();
+        // 服务端申请列表已返回真实头像；为空时按 uid 固定回退（不再随机）
+        if (apply->_icon.isEmpty()) {
+            apply->SetIcon(heads[apply->_uid % heads.size()]);
+        }
         auto* apply_item = new ApplyFriendItem();
-        apply->SetIcon(heads[head_i]);
         apply_item->SetInfo(apply);
         QListWidgetItem* item = new QListWidgetItem;
         //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();

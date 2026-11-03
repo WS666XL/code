@@ -1,4 +1,4 @@
-﻿#include "MessageTextEdit.h"
+﻿#include "messagetextedit.h"
 #include <QDebug>
 #include <QMessageBox>
 

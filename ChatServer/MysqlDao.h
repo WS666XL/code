@@ -1,6 +1,8 @@
 #pragma once
 #include "const.h"
 #include <thread>
+#include <atomic>
+#include <condition_variable>
 #include <jdbc/mysql_driver.h>
 #include <jdbc/mysql_connection.h>
 #include <jdbc/cppconn/prepared_statement.h>
