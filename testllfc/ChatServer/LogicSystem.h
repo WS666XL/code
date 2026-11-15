@@ -34,6 +34,19 @@ private:
 	void DealChatTextMsg(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
 	// 心跳处理：客户端每隔 10s 发一次，回 1024 让客户端知道链路还活着
 	void HeartBeatHandler(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
+	// 加载聊天线程列表（1025→1026）：登录后拉取用户参与的所有会话
+	void GetUserThreadsHandler(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
+	// 查询聊天线程的内部封装，直接转给 MysqlMgr
+	bool GetUserThreads(int64_t userId,
+		int64_t lastId,
+		int      pageSize,
+		std::vector<std::shared_ptr<ChatThreadInfo>>& threads,
+		bool& loadMore,
+		int& nextLastId);
+	// 创建私聊线程（1027→1028）：已存在则复用，不存在才新建
+	void CreatePrivateChat(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
+	// 分页加载某个线程的历史消息（1029→1030）
+	void LoadChatMsg(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
 	bool GetBaseInfo(std::string base_key, int uid, std::shared_ptr<UserInfo>& userinfo);
 	bool isPureDigit(const std::string& str);
 	void GetUserByUid(std::string uid_str, Json::Value& rtvalue);

@@ -144,6 +144,9 @@ void MainWindow::SlotSwitchChat()
     SetCenterWidget(_chat_dlg);      // 将聊天界面换入内容区
     this->setMinimumSize(QSize(1050,900));
     this->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
+    //登录成功切到聊天界面后立刻发 1025 拉会话列表，
+    //会话拉完后客户端会继续自动预加载每个会话的历史消息
+    _chat_dlg->loadChatList();
 }
 
 // 被踢下线：服务端发 1021 后走到这里

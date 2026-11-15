@@ -53,3 +53,29 @@ std::shared_ptr<UserInfo> MysqlMgr::GetUser(std::string name)
 bool MysqlMgr::GetFriendList(int self_id, std::vector<std::shared_ptr<UserInfo> >& user_info) {
 	return _dao.GetFriendList(self_id, user_info);
 }
+
+bool MysqlMgr::GetUserThreads(
+	int64_t userId,
+	int64_t lastId,
+	int      pageSize,
+	std::vector<std::shared_ptr<ChatThreadInfo>>& threads,
+	bool& loadMore,
+	int& nextLastId)
+{
+	return _dao.GetUserThreads(userId, lastId, pageSize, threads, loadMore, nextLastId);
+}
+
+bool MysqlMgr::CreatePrivateChat(int user1_id, int user2_id, int& thread_id)
+{
+	return _dao.CreatePrivateChat(user1_id, user2_id, thread_id);
+}
+
+std::shared_ptr<PageResult> MysqlMgr::LoadChatMsg(int threadId, int lastId, int pageSize)
+{
+	return _dao.LoadChatMsg(threadId, lastId, pageSize);
+}
+
+bool MysqlMgr::AddChatMsg(std::vector<std::shared_ptr<ChatMessage>>& chat_datas)
+{
+	return _dao.AddChatMsg(chat_datas);
+}

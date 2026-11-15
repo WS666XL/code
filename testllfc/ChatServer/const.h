@@ -15,6 +15,14 @@ enum ErrorCodes {
 	PasswdInvalid = 1009,   //密码更新失败
 	TokenInvalid = 1010,   //Token失效
 	UidInvalid = 1011,  //uid无效
+	CREATE_CHAT_FAILED = 1012, //创建聊天失败
+	LOAD_CHAT_FAILED = 1013, //加载聊天失败
+};
+
+//消息类型：和 chat_message 表的 msg_type 字段对应
+enum class ChatMsgType {
+	TEXT = 0,  //文本消息
+	PIC = 1,   //图片消息
 };
 
 
@@ -61,6 +69,12 @@ enum MSG_IDS {
 	ID_NOTIFY_OFF_LINE_REQ = 1021, //通知用户下线
 	ID_HEART_BEAT_REQ = 1023,      //心跳请求
 	ID_HEARTBEAT_RSP = 1024,       //心跳回复
+	ID_LOAD_CHAT_THREAD_REQ = 1025, //加载聊天线程请求
+	ID_LOAD_CHAT_THREAD_RSP = 1026, //加载聊天线程回复
+	ID_CREATE_PRIVATE_CHAT_REQ = 1027, //创建私聊请求
+	ID_CREATE_PRIVATE_CHAT_RSP = 1028, //创建私聊回复
+	ID_LOAD_CHAT_MSG_REQ = 1029,      //加载聊天消息请求
+	ID_LOAD_CHAT_MSG_RSP = 1030,      //加载聊天消息回复
 };
 // 用户 IP 前缀，用于拼接用户 IP 对应的 Redis 键，例如：uip_1001
 #define USERIPPREFIX  "uip_"

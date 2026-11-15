@@ -14,7 +14,8 @@ add_executable(ChatServer
     StatusGrpcClient.cpp
     UserMgr.cpp
     AsioIOServicePool.cpp
-    DistLock.cpp)
+    DistLock.cpp
+    utils.cpp)
 
 add_proto_sources(ChatServer ${CMAKE_CURRENT_SOURCE_DIR})
 config_server(ChatServer)

@@ -10,6 +10,9 @@ TcpMgr::~TcpMgr()
 
 TcpMgr::TcpMgr():_host(""),_port(0),_b_recv_pending(false),_message_id(0),_message_len(0)
 {
+    //注册自定义类型到元对象系统：
+    //这些类型会作为信号槽参数跨对象传递，Qt6 里不注册的话队列连接会报 "Cannot queue arguments of type"
+    registerMetaType();
     QObject::connect(&_socket, &QTcpSocket::connected, [&]() {
         qDebug() << "Connected to server!";
         // 连接建立后发送消息
@@ -271,8 +274,25 @@ void TcpMgr::initHandlers()
         QString icon = jsonObj["icon"].toString();
         int sex = jsonObj["sex"].toInt();
 
+        //认证通知里附带的历史聊天消息（本版服务端不下发则为空数组，SetChatDatas 里会跳过）
+        std::vector<std::shared_ptr<TextChatData>> chat_datas;
+        for (const QJsonValue& data : jsonObj["chat_datas"].toArray()) {
+            auto send_uid = data["sender"].toInt();
+            auto msg_id = data["msg_id"].toInt();
+            auto thread_id = data["thread_id"].toInt();
+            auto unique_id = data["unique_id"].toString();
+            auto msg_content = data["msg_content"].toString();
+            QString chat_time = data["chat_time"].toString();
+            auto status = data["status"].toInt();
+            auto chat_data = std::make_shared<TextChatData>(msg_id, unique_id, thread_id, ChatFormType::PRIVATE,
+                ChatMsgType::TEXT, msg_content, send_uid, status, chat_time);
+            chat_datas.push_back(chat_data);
+        }
+
         auto auth_info = std::make_shared<AuthInfo>(from_uid,name,
                                                     nick, icon, sex);
+
+        auth_info->SetChatDatas(chat_datas);
 
         emit sig_add_auth_friend(auth_info);
         qDebug()<<"ID_NOTIFY_AUTH_FRIEND_REQ";
@@ -337,11 +357,29 @@ void TcpMgr::initHandlers()
         auto icon = jsonObj["icon"].toString();
         auto sex = jsonObj["sex"].toInt();
         auto uid = jsonObj["uid"].toInt();
+
+        //认证回包里附带的历史聊天消息（可能为空，SetChatDatas 里会跳过）
+        std::vector<std::shared_ptr<TextChatData>> chat_datas;
+        for (const QJsonValue& data : jsonObj["chat_datas"].toArray()) {
+            auto send_uid = data["sender"].toInt();
+            auto msg_id = data["msg_id"].toInt();
+            auto thread_id = data["thread_id"].toInt();
+            auto unique_id = data["unique_id"].toString();
+            auto msg_content = data["msg_content"].toString();
+            auto status = data["status"].toInt();
+            auto chat_data = std::make_shared<TextChatData>(msg_id, unique_id, thread_id, ChatFormType::PRIVATE,
+                ChatMsgType::TEXT, msg_content, send_uid, status);
+            chat_datas.push_back(chat_data);
+        }
+
         auto rsp = std::make_shared<AuthRsp>(uid, name, nick, icon, sex);
+        rsp->SetChatDatas(chat_datas);
         emit sig_auth_rsp(rsp);
 
         qDebug() << "Auth Friend Success " ;
     });
+    //1018 自己发消息的服务端回执：
+    //新协议 {error, fromuid, touid, thread_id, chat_datas:[{message_id,unique_id,content,status,chat_time}]}
     _handlers.insert(ID_TEXT_CHAT_MSG_RSP, [this](ReqId id, int len, QByteArray data) {
         Q_UNUSED(len);
         qDebug() << "handle id is " << id << " data is " << data;
@@ -368,10 +406,30 @@ void TcpMgr::initHandlers()
             return;
         }
 
-        qDebug() << "Receive Text Chat Rsp Success " ;
-        //ui设置送达等标记 todo...
-    });
+        qDebug() << "Receive Text Chat Rsp Success ";
+        //收到消息后转发给页面：thread_id 定位会话，message_id/unique_id 用于状态更新
+        auto thread_id = jsonObj["thread_id"].toInt();
+        auto sender = jsonObj["fromuid"].toInt();
 
+        std::vector<std::shared_ptr<TextChatData>> chat_datas;
+        for (const QJsonValue& data : jsonObj["chat_datas"].toArray()) {
+            auto msg_id = data["message_id"].toInt();
+            auto unique_id = data["unique_id"].toString();
+            auto msg_content = data["content"].toString();
+            QString chat_time = data["chat_time"].toString();
+            int status = data["status"].toInt();
+            auto chat_data = std::make_shared<TextChatData>(msg_id, unique_id, thread_id, ChatFormType::PRIVATE,
+                ChatMsgType::TEXT, msg_content, sender, status, chat_time);
+            chat_datas.push_back(chat_data);
+        }
+
+        //发送信号通知界面
+        emit sig_chat_msg_rsp(thread_id, chat_datas);
+
+      });
+
+    //1019 对端发来的文本消息通知：
+    //新协议 {error, fromuid, touid, thread_id, chat_datas:[{message_id,unique_id,content,chat_time(,status)}]}
     _handlers.insert(ID_NOTIFY_TEXT_CHAT_MSG_REQ, [this](ReqId id, int len, QByteArray data) {
         Q_UNUSED(len);
         qDebug() << "handle id is " << id << " data is " << data;
@@ -398,11 +456,27 @@ void TcpMgr::initHandlers()
             return;
         }
 
-        qDebug() << "Receive Text Chat Notify Success " ;
-        auto msg_ptr = std::make_shared<TextChatMsg>(jsonObj["fromuid"].toInt(),
-                                                     jsonObj["touid"].toInt(),jsonObj["text_array"].toArray());
-        emit sig_text_chat_msg(msg_ptr);
-    });
+        qDebug() << "Receive Text Chat Notify Success ";
+
+        //收到消息后转发给页面：按 thread_id 归组整包传递
+        auto thread_id = jsonObj["thread_id"].toInt();
+        auto sender = jsonObj["fromuid"].toInt();
+
+        std::vector<std::shared_ptr<TextChatData>> chat_datas;
+        for (const QJsonValue& data : jsonObj["chat_datas"].toArray()) {
+            auto msg_id = data["message_id"].toInt();
+            auto unique_id = data["unique_id"].toString();
+            auto msg_content = data["content"].toString();
+            QString chat_time = data["chat_time"].toString();
+            //通知包里没有 status 字段时 toInt() 默认返回 0（未读），正好符合语义
+            int status = data["status"].toInt();
+            auto chat_data = std::make_shared<TextChatData>(msg_id, unique_id, thread_id, ChatFormType::PRIVATE,
+                ChatMsgType::TEXT, msg_content, sender, status, chat_time);
+            chat_datas.push_back(chat_data);
+        }
+
+        emit sig_text_chat_msg(chat_datas);
+      });
 
     // 被踢下线（1021）：同账号在别处登录，服务端把旧连接踢掉时发来此消息
     _handlers.insert(ID_NOTIFY_OFF_LINE_REQ,[this](ReqId id, int len, QByteArray data){
@@ -469,6 +543,151 @@ void TcpMgr::initHandlers()
         qDebug() << "Heart Beat Msg Success";
     });
 
+    //1026 聊天线程列表回包：
+    //{error, uid, load_more, next_last_id, threads:[{thread_id,type,user1_id,user2_id}]}
+    _handlers.insert(ID_LOAD_CHAT_THREAD_RSP, [this](ReqId id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        qDebug() << "handle id is " << id << " data is " << data;
+        // 将QByteArray转换为QJsonDocument
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+
+        // 检查转换是否成功
+        if (jsonDoc.isNull()) {
+            qDebug() << "Failed to create QJsonDocument.";
+            return;
+        }
+
+        QJsonObject jsonObj = jsonDoc.object();
+
+        if (!jsonObj.contains("error")) {
+            int err = ErrorCodes::ERR_JSON;
+            qDebug() << "chat thread json parse failed " << err;
+            return;
+        }
+
+        int err = jsonObj["error"].toInt();
+        if (err != ErrorCodes::SUCCESS) {
+            qDebug() << "get chat thread rsp failed, error is " << err;
+            return;
+        }
+
+        qDebug() << "Receive chat thread rsp Success";
+
+        //逐条取出线程信息，交给界面去建 ChatThreadData 和聊天列表条目
+        auto thread_array = jsonObj["threads"].toArray();
+        std::vector<std::shared_ptr<ChatThreadInfo>> chat_threads;
+        for (const QJsonValue& value : thread_array) {
+            auto cti = std::make_shared<ChatThreadInfo>();
+            cti->_thread_id = value["thread_id"].toInt();
+            cti->_type = value["type"].toString();
+            cti->_user1_id = value["user1_id"].toInt();
+            cti->_user2_id = value["user2_id"].toInt();
+            chat_threads.push_back(cti);
+        }
+
+        bool load_more = jsonObj["load_more"].toBool();
+        int next_last_id = jsonObj["next_last_id"].toInt();
+        //发送信号通知界面
+        emit sig_load_chat_thread(load_more, next_last_id, chat_threads);
+    });
+
+    //1028 创建私聊回包：{error, uid, other_id, thread_id}
+    _handlers.insert(ID_CREATE_PRIVATE_CHAT_RSP, [this](ReqId id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        qDebug() << "handle id is " << id << " data is " << data;
+        // 将QByteArray转换为QJsonDocument
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+
+        // 检查转换是否成功
+        if (jsonDoc.isNull()) {
+            qDebug() << "Failed to create QJsonDocument.";
+            return;
+        }
+
+        QJsonObject jsonObj = jsonDoc.object();
+
+        if (!jsonObj.contains("error")) {
+            int err = ErrorCodes::ERR_JSON;
+            qDebug() << "parse create private chat json parse failed " << err;
+            return;
+        }
+
+        int err = jsonObj["error"].toInt();
+        if (err != ErrorCodes::SUCCESS) {
+            qDebug() << "get create private chat failed, error is " << err;
+            return;
+        }
+
+        qDebug() << "Receive create private chat rsp Success";
+
+        int uid = jsonObj["uid"].toInt();
+        int other_id = jsonObj["other_id"].toInt();
+        int thread_id = jsonObj["thread_id"].toInt();
+
+        //发送信号通知界面
+        emit sig_create_private_chat(uid, other_id, thread_id);
+    });
+
+    //1030 历史消息分页回包：
+    //{error, thread_id, last_message_id, load_more, chat_datas:[{sender,msg_id,thread_id,unique_id,msg_content,chat_time,status,msg_type,receiver}]}
+    //本轮只处理文本消息（msg_type==TEXT），图片分支留待后续
+    _handlers.insert(ID_LOAD_CHAT_MSG_RSP, [this](ReqId id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        qDebug() << "handle id is " << id << " data is " << data;
+        // 将QByteArray转换为QJsonDocument
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+
+        // 检查转换是否成功
+        if (jsonDoc.isNull()) {
+            qDebug() << "Failed to create QJsonDocument.";
+            return;
+        }
+
+        QJsonObject jsonObj = jsonDoc.object();
+
+        if (!jsonObj.contains("error")) {
+            int err = ErrorCodes::ERR_JSON;
+            qDebug() << "parse load chat msg json parse failed " << err;
+            return;
+        }
+
+        int err = jsonObj["error"].toInt();
+        if (err != ErrorCodes::SUCCESS) {
+            qDebug() << "get load chat msg failed, error is " << err;
+            return;
+        }
+
+        qDebug() << "Receive load chat msg rsp Success";
+
+        int thread_id = jsonObj["thread_id"].toInt();
+        int last_msg_id = jsonObj["last_message_id"].toInt();
+        bool load_more = jsonObj["load_more"].toBool();
+
+        std::vector<std::shared_ptr<ChatDataBase>> chat_datas;
+        for (const QJsonValue& data : jsonObj["chat_datas"].toArray()) {
+            auto send_uid = data["sender"].toInt();
+            auto msg_id = data["msg_id"].toInt();
+            auto thread_id = data["thread_id"].toInt();
+            auto msg_content = data["msg_content"].toString();
+            QString chat_time = data["chat_time"].toString();
+            int status = data["status"].toInt();
+            int msg_type = data["msg_type"].toInt();
+            //只装文本消息：基类指针入列表，界面层再按消息类型画气泡
+            if (msg_type == int(ChatMsgType::TEXT)) {
+                auto chat_data = std::make_shared<TextChatData>(msg_id, thread_id, ChatFormType::PRIVATE,
+                    ChatMsgType::TEXT, msg_content, send_uid, status, chat_time);
+                chat_datas.push_back(chat_data);
+                continue;
+            }
+
+            //图片等其他类型本轮不支持，直接跳过（不画、不存）
+            qDebug() << "skip unsupported msg_type " << msg_type << " in thread " << thread_id;
+        }
+
+        //发送信号通知界面
+        emit sig_load_chat_msg(thread_id, last_msg_id, load_more, chat_datas);
+    });
+
 }
 
 // 主动关闭连接：emit 内部信号，由 slot_tcp_close 在对象所属线程里真正 close
@@ -476,9 +695,33 @@ void TcpMgr::CloseConnection(){
     emit sig_close();
 }
 
+// 关闭socket：外部调 CloseConnection() → 发 sig_close → 转到 slot_tcp_close
 void TcpMgr::slot_tcp_close() {
     _socket.close();
 }
+
+//统一注册信号槽里要传的自定义类型（名字必须和参数类型写法完全一致）
+void TcpMgr::registerMetaType() {
+    qRegisterMetaType<ServerInfo>("ServerInfo");
+    qRegisterMetaType<SearchInfo>("SearchInfo");
+    qRegisterMetaType<std::shared_ptr<SearchInfo>>("std::shared_ptr<SearchInfo>");
+
+    qRegisterMetaType<AddFriendApply>("AddFriendApply");
+    qRegisterMetaType<std::shared_ptr<AddFriendApply>>("std::shared_ptr<AddFriendApply>");
+
+    qRegisterMetaType<ApplyInfo>("ApplyInfo");
+    qRegisterMetaType<std::shared_ptr<AuthInfo>>("std::shared_ptr<AuthInfo>");
+    qRegisterMetaType<AuthRsp>("AuthRsp");
+    qRegisterMetaType<std::shared_ptr<AuthRsp>>("std::shared_ptr<AuthRsp>");
+    qRegisterMetaType<UserInfo>("UserInfo");
+
+    qRegisterMetaType<std::vector<std::shared_ptr<TextChatData>>>("std::vector<std::shared_ptr<TextChatData>>");
+    qRegisterMetaType<std::vector<std::shared_ptr<ChatThreadInfo>>>("std::vector<std::shared_ptr<ChatThreadInfo>>");
+    qRegisterMetaType<std::shared_ptr<ChatThreadData>>("std::shared_ptr<ChatThreadData>");
+    qRegisterMetaType<std::vector<std::shared_ptr<ChatDataBase>>>("std::vector<std::shared_ptr<ChatDataBase>>");
+    qRegisterMetaType<ReqId>("ReqId");
+}
+
 void TcpMgr::handleMsg(ReqId id, int len, QByteArray data)
 {
     auto find_iter =  _handlers.find(id);

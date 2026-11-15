@@ -39,6 +39,12 @@ enum ReqId{
     ID_NOTIFY_OFF_LINE_REQ = 1021, //通知用户下线（同账号异地登录被踢）
     ID_HEART_BEAT_REQ = 1023,      //心跳请求
     ID_HEARTBEAT_RSP = 1024,       //心跳回复
+    ID_LOAD_CHAT_THREAD_REQ = 1025,  //加载聊天线程列表请求（登录后拉取会话列表，按 thread_id 翻页）
+    ID_LOAD_CHAT_THREAD_RSP = 1026,  //加载聊天线程列表回复
+    ID_CREATE_PRIVATE_CHAT_REQ = 1027, //创建私聊请求（没有现成会话时先建线程再聊天）
+    ID_CREATE_PRIVATE_CHAT_RSP = 1028, //创建私聊回复（带回 thread_id）
+    ID_LOAD_CHAT_MSG_REQ = 1029,     //分页加载某个会话的历史消息请求
+    ID_LOAD_CHAT_MSG_RSP = 1030,     //分页加载历史消息回复
 };
 
 // 统一错误码：网络层和业务层共用一套编号，便于判断成功与否
@@ -88,6 +94,27 @@ enum class ChatRole
 {
     Self,
     Other
+};
+
+//消息状态：自己发的消息气泡旁边的小图标（未送达/送达/已读）用
+enum MsgStatus{
+    UN_READ = 0,      //对方未读（刚发出去还没收到回执）
+    SEND_FAILED = 1,  //发送失败
+    READED = 2,       //对方已读（服务端落库后回执默认给 2）
+};
+
+//聊天形式：本轮只做私聊，群聊留待后续
+enum class ChatFormType {
+    PRIVATE = 0,  //私聊
+    GROUP = 1     //群聊
+};
+
+//聊天消息类型：1030 回包里的 msg_type 按这个枚举解释；本轮只处理文本
+enum class ChatMsgType {
+    TEXT = 0,  //文本
+    PIC = 1,   //图片（本轮跳过）
+    VIDEO = 2, //视频
+    FILE = 3   //文件
 };
 struct MsgInfo{
     QString msgFlag;//"text,image,file"

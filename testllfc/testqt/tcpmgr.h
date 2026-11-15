@@ -23,6 +23,7 @@ public:
     ~TcpMgr();
 private:
     TcpMgr();                          // 私有构造函数，在里面 connect 好所有信号
+    void registerMetaType();           // 注册跨信号槽传递的自定义类型（Qt6 队列信号必需）
     void initHandlers();               // 注册"消息ID → 处理函数"的分发表
     void handleMsg(ReqId id, int len, QByteArray data);//处理消息：按 id 查分发表再交给对应 lambda
 
@@ -70,7 +71,22 @@ signals:
     // 好友申请处理结果
     void sig_auth_rsp(std::shared_ptr<AuthRsp>);
 
-    void sig_text_chat_msg(std::shared_ptr<TextChatMsg> msg);
+    // 文本消息回执/通知：按会话 thread_id 归组，整包列表一次传给界面
+    void sig_text_chat_msg(std::vector<std::shared_ptr<TextChatData>> msg_list);
+
+    // 1018 自己发消息的服务端回执（带 thread_id + 服务端分配的 message_id）
+    void sig_chat_msg_rsp(int thread_id, std::vector<std::shared_ptr<TextChatData>> msg_list);
+
+    // 1026 聊天线程列表回包：load_more 表示还有没有下一页，last_thread_id 是翻页游标
+    void sig_load_chat_thread(bool load_more, int last_thread_id,
+        std::vector<std::shared_ptr<ChatThreadInfo>> chat_list);
+
+    // 1028 创建私聊回包：拿到 thread_id 后界面才能建会话条目
+    void sig_create_private_chat(int uid, int other_id, int thread_id);
+
+    // 1030 历史消息回包：thread_id + 翻页游标 + 消息列表（基类指针，兼容后续图片消息）
+    void sig_load_chat_msg(int thread_id, int message_id, bool load_more,
+        std::vector<std::shared_ptr<ChatDataBase>> msg_list);
 };
 
 #endif // TCPMGR_H

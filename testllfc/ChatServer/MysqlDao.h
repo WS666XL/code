@@ -167,6 +167,22 @@ public:
 	bool GetFriendList(int self_id, std::vector<std::shared_ptr<UserInfo> >& user_info);
 	std::shared_ptr<UserInfo> GetUser(int uid);
 	std::shared_ptr<UserInfo> GetUser(std::string name);
+
+	// ===== 聊天记录相关 =====
+	// 分页拉取用户参与的所有聊天线程（私聊 + 群聊），lastId 为上页最后一条 thread_id
+	bool GetUserThreads(
+		int64_t userId,
+		int64_t lastId,
+		int      pageSize,
+		std::vector<std::shared_ptr<ChatThreadInfo>>& threads,
+		bool& loadMore,
+		int& nextLastId);
+	// 创建（或复用已有的）私聊线程，thread_id 返回给调用方
+	bool CreatePrivateChat(int user1_id, int user2_id, int& thread_id);
+	// 按 thread_id 分页拉取历史消息，lastId 为上页最后一条 message_id
+	std::shared_ptr<PageResult> LoadChatMsg(int threadId, int lastId, int pageSize);
+	// 批量插入聊天消息，插入后回填自增 message_id
+	bool AddChatMsg(std::vector<std::shared_ptr<ChatMessage>>& chat_datas);
 private:
 	std::unique_ptr<MySqlPool> pool_;
 };

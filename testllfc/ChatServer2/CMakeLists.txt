@@ -18,7 +18,8 @@ add_executable(ChatServer2
     ${SHARED_SRC_DIR}/StatusGrpcClient.cpp
     ${SHARED_SRC_DIR}/UserMgr.cpp
     ${SHARED_SRC_DIR}/AsioIOServicePool.cpp
-    ${SHARED_SRC_DIR}/DistLock.cpp)
+    ${SHARED_SRC_DIR}/DistLock.cpp
+    ${SHARED_SRC_DIR}/utils.cpp)
 
 add_proto_sources(ChatServer2 ${SHARED_SRC_DIR})
 config_server(ChatServer2)
