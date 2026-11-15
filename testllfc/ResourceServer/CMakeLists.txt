@@ -1,5 +1,5 @@
 # ResourceServer —— 文件/资源服务器
-# 只负责文件分块的接收与落盘，暂不依赖 MySQL/Redis
+# 文件分块的接收与落盘；1031 头像上传还会连 MySQL/Redis（更新 user.icon + 校验 token）
 add_executable(ResourceServer
     ResourceServer.cpp
     CServer.cpp
@@ -8,6 +8,8 @@ add_executable(ResourceServer
     ConfigMgr.cpp
     LogicSystem.cpp
     FileSystem.cpp
+    RedisMgr.cpp
+    MysqlDao.cpp
     AsioIOServicePool.cpp
     base64.cpp)
 

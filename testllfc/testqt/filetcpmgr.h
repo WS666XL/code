@@ -27,6 +27,8 @@ enum ResReqId {
     RES_ID_TEST_MSG_RSP = 1002,     //链路自测回包：服务器原样带回 data
     RES_ID_UPLOAD_FILE_REQ = 1003,  //文件分块上传请求
     RES_ID_UPLOAD_FILE_RSP = 1004,  //上传进度回执：每落盘一块服务器就回一条
+    RES_ID_UPLOAD_HEAD_ICON_REQ = 1031, //头像上传请求（老师消息 ID 1031：带 uid/token，服务端先校验再落盘）
+    RES_ID_UPLOAD_HEAD_ICON_RSP = 1032, //头像上传回包：每块落盘后回一条；最后一块落盘+DB更新后才回
 };
 
 // 包头长度宏以 global.h 为准；这里兜底 #ifndef 保护，
@@ -46,6 +48,11 @@ public:
     // 上传本地文件：内部完成 md5 计算 + 按 MAX_FILE_LEN(32KB) 分块 + JSON 组包，
     // 逐块经 sendMsg(1003) 发出；进度通过 sig_upload_progress / sig_upload_done 反馈
     bool UploadFile(QString path);
+    // 上传头像（老师消息 1031 链路）：与 UploadFile 同样的分块逻辑，但
+    // 请求里额外带 uid/token（服务端首块时用 Redis 里的 utoken_<uid> 校验），
+    // 服务端落盘到 output/static/<uid>/head.png 并更新 MySQL user.icon + Redis 缓存；
+    // 每块落盘后服务器回 1032，最后一块处理完回的 1032 触发 sig_upload_head_done
+    bool UploadHeadIcon(QString path);
     // 对外发送入口：把 (消息ID, JSON包体) 经 sig_send_data 信号转给 slot_send_data 真正发出
     void sendMsg(quint16 id, QByteArray body);
 
@@ -78,6 +85,7 @@ signals:
     void sig_test_rsp(QString data);      // 1002 链路自测回包带回的 data（当前只打日志）
     void sig_upload_progress(int trans_size, int total_size); // 每块落盘后的进度回执
     void sig_upload_done(QString name);   // last==1：整份文件上传完成
+    void sig_upload_head_done(QString name); // 头像上传完成：服务器已落盘+更新 DB/Redis 后回的 1032
     void sig_connection_closed();         // 连接被服务器断开
 };
 

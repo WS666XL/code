@@ -129,10 +129,12 @@ const QString add_prefix = "添加标签 ";
 
 const int  tip_offset = 5;//标签间距/边距
 struct ServerInfo{
-    QString Host;
-    QString Port;
-    QString Token;
+    QString Host;      //聊天服务器 host（GateServer 登录回包下发）
+    QString Port;      //聊天服务器 port
+    QString Token;     //登录令牌（连 ChatServer 后 ID_CHAT_LOGIN 带它验证）
     int Uid;
+    QString ResHost;   //资源服务器 host（day39：GateServer 从配置读出随登录回包下发）
+    QString ResPort;   //资源服务器 port（一般 9090）
 };
 // 后端服务器地址前缀，形如 "http://localhost:8080"（不含具体接口名）。
 // 由 main.cpp 启动时从 config.ini 里读出来赋值；各界面拿它拼上接口名就能发请求，

@@ -5,6 +5,7 @@
 #include<QPainterPath>
 #include"httpmgr.h"
 #include"tcpmgr.h"
+#include"filetcpmgr.h"
 LoginDialog::LoginDialog(QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::LoginDialog)
@@ -28,6 +29,13 @@ LoginDialog::LoginDialog(QWidget *parent)
     connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_con_success, this, &LoginDialog::slot_tcp_con_finish);
     //连接tcp管理者发出的连接失败信号
     connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_login_failed, this, &LoginDialog::slot_login_failed);
+    //登录成功后同时连资源服务器（day39 头像上传链路需要）：
+    //lambda 拆出 ResHost/ResPort 调 ConnectResServer，连接结果走 FileTcpMgr 内部信号
+    connect(this, &LoginDialog::sig_connect_res_server, this,
+        [](ServerInfo si) {
+            FileTcpMgr::GetInstance()->ConnectResServer(
+                si.ResHost, si.ResPort.toUInt());
+        });
 }
 
 LoginDialog::~LoginDialog()
@@ -237,12 +245,21 @@ void LoginDialog::initHttpHandlers()
         si.Host = jsonObj["host"].toString();
         si.Port = jsonObj["port"].toString();
         si.Token = jsonObj["token"].toString();
+        //资源服务器地址随登录回包下发（day39：GateServer 从自己 config.ini 的
+        //[ResServer] 段读出），这样资源服务器换地址时客户端无需重新编译
+        si.ResHost = jsonObj["reshost"].toString();
+        si.ResPort = jsonObj["resport"].toString();
 
         _uid = si.Uid;
         _token = si.Token;
         qDebug()<< "email is " << email << " uid is " << si.Uid <<" host is "
-                 << si.Host << " Port is " << si.Port << " Token is " << si.Token;
+                 << si.Host << " Port is " << si.Port << " Token is " << si.Token
+                 << " res host is " << si.ResHost << " res port is " << si.ResPort;
         emit sig_connect_tcp(si);
+        // 同时发起资源服务器长连接（FileTcpMgr）：与老师版一致，
+        // 登录页阶段就把两条链路都建好；连接是异步的，失败只打日志，
+        // 不阻塞进主界面（上传时 UploadHeadIcon 里还会再检查连接状态）
+        emit sig_connect_res_server(si);
     });
 }
 

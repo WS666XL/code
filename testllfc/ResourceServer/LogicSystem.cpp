@@ -1,5 +1,6 @@
 #include "LogicSystem.h"
 #include "FileSystem.h"
+#include "RedisMgr.h"
 #include <json/json.h>
 #include <json/value.h>
 #include <json/reader.h>
@@ -114,8 +115,8 @@ void LogicWorker::RegisterCallBacks()
 			std::cout << "Hash value: " << hash_value << std::endl;
 
 			FileSystem::GetInstance()->PostMsgToQue(
-				std::make_shared<FileTask>(session, name, seq, total_size,
-					trans_size, last, file_data),
+				std::make_shared<FileTask>(session, ID_UPLOAD_FILE_REQ, name, seq, total_size,
+					trans_size, last, file_data, 0),
 				index
 			);
 
@@ -125,6 +126,90 @@ void LogicWorker::RegisterCallBacks()
 			rtvalue["name"] = name;
 			rtvalue["trans_size"] = trans_size;
 			rtvalue["last"] = last;
+	};
+
+	// 1031 上传头像分块：与 1003 的差别——
+	// 1. 请求里多带 uid/token/last_seq；首块时用 Redis 里的 utoken_<uid> 校验 token，
+	//    防止未登录的人往别人目录里塞文件（老师版 day39 同款校验）
+	// 2. 回包时机不同：1003 解析完立即回 1004（不等落盘），1031 要等 FileWorker
+	//    落盘（最后一块还要更新 DB/Redis）后才回 1032，所以回包逻辑包在 callback 里
+	// 3. 老师版首块还会往 Redis 写 FileInfo 做断点续传（day38 内容），
+	//    本版没做断点续传，跳过该步，只保留 token 校验
+	_fun_callbacks[ID_UPLOAD_HEAD_ICON_REQ] = [this](shared_ptr<CSession> session, const short& msg_id,
+		const string& msg_data) {
+			Json::Reader reader;
+			Json::Value root;
+			reader.parse(msg_data, root);
+			auto md5 = root["md5"].asString();
+			auto seq = root["seq"].asInt();
+			auto name = root["name"].asString();
+			auto total_size = root["total_size"].asInt();
+			auto trans_size = root["trans_size"].asInt();
+			auto last = root["last"].asInt();
+			auto file_data = root["data"].asString();
+			auto uid = root["uid"].asInt();
+			auto token = root["token"].asString();
+			auto last_seq = root["last_seq"].asInt();
+
+			//callback 在 FileWorker 线程里被调用（落盘完成后）：
+			//把回执字段补齐后用 session->Send 回 1032（Send 内部有锁，跨线程安全）
+			auto callback = [session, total_size, seq, name, trans_size, last,
+				md5, uid, last_seq](const Json::Value& result) {
+					Json::Value rtvalue = result;
+					rtvalue["total_size"] = total_size;
+					rtvalue["seq"] = seq;
+					rtvalue["name"] = name;
+					rtvalue["trans_size"] = trans_size;
+					rtvalue["last"] = last;
+					rtvalue["md5"] = md5;
+					rtvalue["uid"] = uid;
+					rtvalue["last_seq"] = last_seq;
+					std::string return_str = rtvalue.toStyledString();
+					session->Send(return_str, ID_UPLOAD_HEAD_ICON_RSP);
+			};
+
+			//首块校验 token：从 Redis 取该 uid 登录时写入的令牌比对；
+			//校验失败的直接回 1032 带 error，不投递落盘任务
+			if (seq == 1) {
+				std::string uid_str = std::to_string(uid);
+				std::string token_key = USERTOKENPREFIX + uid_str;
+				std::string token_value = "";
+				bool success = RedisMgr::GetInstance()->Get(token_key, token_value);
+				if (!success) {
+					Json::Value rtvalue;
+					rtvalue["error"] = ErrorCodes::UidInvalid;
+					rtvalue["md5"] = md5;
+					rtvalue["seq"] = seq;
+					rtvalue["name"] = name;
+					rtvalue["uid"] = uid;
+					std::string return_str = rtvalue.toStyledString();
+					session->Send(return_str, ID_UPLOAD_HEAD_ICON_RSP);
+					return;
+				}
+
+				if (token_value != token) {
+					Json::Value rtvalue;
+					rtvalue["error"] = ErrorCodes::TokenInvalid;
+					rtvalue["md5"] = md5;
+					rtvalue["seq"] = seq;
+					rtvalue["name"] = name;
+					rtvalue["uid"] = uid;
+					std::string return_str = rtvalue.toStyledString();
+					session->Send(return_str, ID_UPLOAD_HEAD_ICON_RSP);
+					return;
+				}
+			}
+
+			//与 1003 相同：按文件名哈希选 FileWorker，
+			//同一头像（同名文件）的所有分块落到同一线程串行落盘
+			std::hash<std::string> hash_fn;
+			size_t hash_value = hash_fn(name);
+			int index = hash_value % FILE_WORKER_COUNT;
+
+			auto task = std::make_shared<FileTask>(session, ID_UPLOAD_HEAD_ICON_REQ, name, seq,
+				total_size, trans_size, last, file_data, uid);
+			task->_callback = callback;
+			FileSystem::GetInstance()->PostMsgToQue(task, index);
 	};
 }
 

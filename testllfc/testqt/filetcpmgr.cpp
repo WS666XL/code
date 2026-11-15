@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QCryptographicHash>
+#include "usermgr.h"
 
 FileTcpMgr::~FileTcpMgr()
 {
@@ -153,6 +154,42 @@ void FileTcpMgr::initHandlers()
             emit sig_upload_done(name);
         }
     });
+
+    // 1032 头像上传回包：服务器每落盘一块就回一条
+    // {error, total_size, seq, name, trans_size, last, md5, uid, last_seq}。
+    // 与 1004 的差别：1031 是"落盘后才回"，且最后一块的回包发在 DB/Redis 更新之后，
+    // 所以收到 trans_size==total_size 的 1032 就代表"头像已完整入库"，而不是仅仅收完
+    _handlers.insert(RES_ID_UPLOAD_HEAD_ICON_RSP, [this](quint16 id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        qDebug() << "FileTcpMgr handle id is " << id;
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+        if (jsonDoc.isNull()) {
+            qDebug() << "FileTcpMgr head icon rsp json parse failed";
+            return;
+        }
+        QJsonObject jsonObj = jsonDoc.object();
+        if (!jsonObj.contains("error")) {
+            qDebug() << "FileTcpMgr head icon rsp missing error field";
+            return;
+        }
+        int err = jsonObj["error"].toInt();
+        if (err != ErrorCodes::SUCCESS) {
+            // 常见错误：1010 token 失效 / 1011 uid 无效（Redis 查不到 token）——
+            // 一般是登录态过期后仍尝试上传，提示用户重新登录即可
+            qDebug() << "FileTcpMgr head icon upload failed, err is" << err;
+            return;
+        }
+
+        QString name = jsonObj["name"].toString();
+        int trans_size = jsonObj["trans_size"].toInt();
+        int total_size = jsonObj["total_size"].toInt();
+        emit sig_upload_progress(trans_size, total_size);
+        if (trans_size == total_size) {
+            qDebug() << "FileTcpMgr head icon upload done:" << name
+                     << "total_size" << total_size;
+            emit sig_upload_head_done(name);
+        }
+    });
 }
 
 void FileTcpMgr::handleMsg(quint16 id, int len, QByteArray data)
@@ -273,6 +310,77 @@ bool FileTcpMgr::UploadFile(QString path)
 
     file.close();
     qDebug() << "FileTcpMgr UploadFile sent:" << fileName
+             << "total_size" << total_size << "blocks" << seq;
+    return true;
+}
+
+// 上传头像（老师消息 1031 链路）：分块组包逻辑与 UploadFile 完全同构，差别有三点——
+// 1. 消息 ID 用 1031；请求 JSON 额外带 token/uid（服务端首块时校验登录态）
+// 2. 服务端按 uid 分目录落盘并更新 MySQL/Redis，所以文件名固定为 head.png 也能
+//    按 uid 区分；md5 只是随老师协议带上，本版不用它做断点续传
+// 3. 完成信号用 sig_upload_head_done（服务端 DB 更新完才回的 1032）
+bool FileTcpMgr::UploadHeadIcon(QString path)
+{
+    // 和 UploadFile 一样：链路没通就直接失败，不做无谓的组包
+    if (_socket.state() != QAbstractSocket::ConnectedState) {
+        qDebug() << "FileTcpMgr UploadHeadIcon failed: resource server not connected";
+        return false;
+    }
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        qDebug() << "FileTcpMgr UploadHeadIcon could not open file:" << file.errorString();
+        return false;
+    }
+
+    QCryptographicHash hash(QCryptographicHash::Md5);
+    qint64 originalPos = file.pos();
+    if (!hash.addData(&file)) {
+        qDebug() << "FileTcpMgr UploadHeadIcon failed to read data from file:" << path;
+        file.close();
+        return false;
+    }
+    QString file_md5 = hash.result().toHex();
+
+    QFileInfo fileInfo(path);
+    // 服务器端按 <uid>/<文件名> 落盘，这里只发文件名不带本地路径
+    QString fileName = fileInfo.fileName();
+    qint64 total_size = fileInfo.size();
+    if (total_size <= 0) {
+        qDebug() << "FileTcpMgr UploadHeadIcon: empty file, skip";
+        file.close();
+        return false;
+    }
+
+    qint64 last_seq = (total_size + MAX_FILE_LEN - 1) / MAX_FILE_LEN;
+
+    file.seek(originalPos);
+
+    qint64 seq = 0;
+    while (!file.atEnd()) {
+        QByteArray buffer = file.read(MAX_FILE_LEN);
+        ++seq;
+
+        QJsonObject jsonObj;
+        jsonObj["md5"] = file_md5;
+        jsonObj["name"] = fileName;
+        jsonObj["seq"] = static_cast<int>(seq);
+        jsonObj["trans_size"] = static_cast<int>(buffer.size() + (seq - 1) * MAX_FILE_LEN);
+        jsonObj["total_size"] = static_cast<int>(total_size);
+        jsonObj["last"] = (seq == last_seq) ? 1 : 0;
+        jsonObj["last_seq"] = static_cast<int>(last_seq);
+        // 头像请求比 1003 多带的两个身份字段：
+        // 服务端首块时拿 token 和 Redis 里 utoken_<uid> 比对，通过才落盘
+        jsonObj["token"] = UserMgr::GetInstance()->GetToken();
+        jsonObj["uid"] = UserMgr::GetInstance()->GetUid();
+        jsonObj["data"] = QString::fromLatin1(buffer.toBase64());
+
+        QJsonDocument doc(jsonObj);
+        sendMsg(RES_ID_UPLOAD_HEAD_ICON_REQ, doc.toJson(QJsonDocument::Compact));
+    }
+
+    file.close();
+    qDebug() << "FileTcpMgr UploadHeadIcon sent:" << fileName
              << "total_size" << total_size << "blocks" << seq;
     return true;
 }

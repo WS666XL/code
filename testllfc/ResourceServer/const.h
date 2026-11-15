@@ -14,7 +14,14 @@ enum MsgIds {
 	ID_TEST_MSG_RSP = 1002,       //测试消息回包
 	ID_UPLOAD_FILE_REQ = 1003,    //上传文件请求
 	ID_UPLOAD_FILE_RSP = 1004,    //上传文件回复
+	ID_UPLOAD_HEAD_ICON_REQ = 1031, //上传头像请求（老师消息 ID 体系，与 ChatServer 的 1031 同号不同服不冲突）
+	ID_UPLOAD_HEAD_ICON_RSP = 1032, //上传头像回包（最后一块落盘+DB更新后由 FileWorker 回）
 };
+
+//Redis key 前缀：与 ChatServer 保持同一套约定，
+//这样 ChatServer 登录时写入的 token / 用户信息缓存，这里能用相同的 key 读到
+#define USERTOKENPREFIX  "utoken_"   //登录令牌：<uid> → token（登录时 StatusServer/ChatServer 写入）
+#define USER_BASE_INFO "ubaseinfo_"  //用户信息缓存：<uid> → JSON(uid/pwd/name/email/nick/desc/sex/icon)
 
 //包头布局：2 字节消息 id + 4 字节包体长度（均网络字节序/大端）
 #define HEAD_TOTAL_LEN 6
@@ -36,6 +43,9 @@ enum MsgIds {
 enum ErrorCodes {
 	Success = 0,
 	Error_Json = 1001,  //Json解析错误
+	TokenInvalid = 1010,   //Token失効（与老师版错误码编号保持一致）
+	UidInvalid = 1011,     //uid 无效（Redis 里查不到 token）
+	FileWritePermissionFailed = 1015, //文件打开/写入失败
 };
 
 // Defer类

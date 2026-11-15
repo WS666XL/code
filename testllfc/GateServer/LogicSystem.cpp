@@ -305,6 +305,11 @@ LogicSystem::LogicSystem() {
         root["token"] = reply.token();
         root["host"] = reply.host();
 		root["port"] = reply.port();
+		// 资源服务器地址随登录回包下发（day39 头像上传链路）：
+		// 客户端拿它发起 FileTcpMgr 长连接，换 ResServer 地址只改本配置不用重编客户端
+		auto& res_cfg = ConfigMgr::Inst();
+		root["reshost"] = res_cfg["ResServer"]["Host"];
+		root["resport"] = res_cfg["ResServer"]["Port"];
 		// 补充下发用户资料：客户端 tcpmgr 解析登录响应时要用这些字段
 		// 构建自己的 UserInfo（此前缺失导致自己的头像/昵称显示错误）
         root["name"] = userInfo.name;

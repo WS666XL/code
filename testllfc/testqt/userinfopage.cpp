@@ -1,6 +1,7 @@
 #include "userinfopage.h"
 #include "usermgr.h"
 #include "global.h"
+#include "filetcpmgr.h"
 #include "imagecropperdialog.h"
 #include "imagecropperlabel.h"
 
@@ -18,13 +19,15 @@
 
 /******************************************************************************
  *  userinfopage.cpp
- *  作用：用户信息页（day36）。本轮只做"看 + 换本地头像"：
+ *  作用：用户信息页（day36 裁剪 + day39 上传链路）：
  *        1) 构造时从 UserMgr::GetUserInfo() 取 _icon 加载头像和资料（只读）
  *        2) up_btn → QFileDialog 选图 → ImageCropperDialog 圆形裁剪
  *        3) 裁剪结果缩放显示到 head_lb，PNG 保存到
  *           QStandardPaths::AppDataLocation/<uid>/avatars/head.png
- *        4) 同步 UserMgr 的 _icon 为本地路径并发 sig_reset_head()
- *           （chatdialog 接它刷新侧边栏；服务器上传是后续轮次）
+ *        4) 发 1031 分块上传（FileTcpMgr::UploadHeadIcon）→ 服务端落盘
+ *           output/static/<uid>/head.png 并更新 MySQL user.icon + Redis 缓存
+ *        5) 同步 UserMgr 的 _icon 为服务器文件名（DB icon 语义）并发 sig_reset_head()
+ *           （chatdialog 接它刷新侧边栏；收 1032 打日志确认入库）
  *****************************************************************************/
 UserInfoPage::UserInfoPage(QWidget *parent)
     : QWidget(parent)
@@ -46,6 +49,13 @@ UserInfoPage::UserInfoPage(QWidget *parent)
     desc_ed->setText(desc);
 
     connect(up_btn, &QPushButton::clicked, this, &UserInfoPage::slot_up_load);
+
+    // 头像入库确认：服务端最后一块落盘并更新 MySQL user.icon / Redis 缓存后
+    // 才回的 1032（trans_size==total_size），收到即说明服务器已持久化
+    connect(FileTcpMgr::GetInstance().get(), &FileTcpMgr::sig_upload_head_done,
+        this, [](const QString& name) {
+            qDebug() << "头像上传完成并已入库：" << name;
+        });
 }
 
 // 纯代码布局（对应老师 userinfopage.ui 的结构，控件同名）：
@@ -165,8 +175,8 @@ QPixmap UserInfoPage::MakeRoundPixmap(const QPixmap& src)
     return dst;
 }
 
-// 上传头像（老师 userinfopage.cpp 同名槽，去掉服务器上传部分）：
-// 选图 → 裁剪 → 显示 → 存本地 → 同步 _icon → 发 sig_reset_head()
+// 上传头像（老师 userinfopage.cpp slot_up_load 同名槽，接上服务器上传链路）：
+// 选图 → 裁剪 → 显示 → 存本地 → 发 1031 上传 → 同步 _icon → 发 sig_reset_head()
 void UserInfoPage::slot_up_load()
 {
     // 1. 选图（webp 也放行，QPixmap 装了 imageformats 插件就能解码）
@@ -204,7 +214,7 @@ void UserInfoPage::slot_up_load()
         return;
     }
     QString file_path = dir.filePath("avatars/head.png");
-    // 存裁剪原图（不存缩放图）：清晰度最好，后续轮次上传服务器也直接用它
+    // 存裁剪原图（不存缩放图）：清晰度最好，上传服务器也直接用这份
     if (!round_pixmap.save(file_path, "PNG")) {
         QMessageBox::warning(this, tr("保存失败"),
             tr("头像保存失败，请检查权限或磁盘空间。"));
@@ -212,12 +222,18 @@ void UserInfoPage::slot_up_load()
     }
     qDebug() << "头像已保存到：" << file_path;
 
-    // 5. 同步 UserMgr 里当前用户的 _icon 为本地路径：
-    //    这样其他界面（侧边栏等）刷新头像时拿到的是同一份
+    // 5. 发 1031 上传到资源服务器（异步）：服务端按 <uid>/head.png 落盘到
+    //    output/static/，最后一块落盘后更新 MySQL user.icon + Redis 缓存再回 1032。
+    //    未连接资源服务器时静默失败（本地头像已保存，界面显示不受影响）
+    FileTcpMgr::GetInstance()->UploadHeadIcon(file_path);
+
+    // 6. 同步 UserMgr 里当前用户的 _icon 为服务器文件名（老师语义：DB icon 存文件名）：
+    //    本地回显时 LoadHeadFromLocal 会用文件名拼回 AppData/<uid>/avatars/ 目录，
+    //    所以无论上传是否成功，本地显示都成立
     if (auto user_info = UserMgr::GetInstance()->GetUserInfo()) {
-        user_info->_icon = file_path;
+        user_info->_icon = QFileInfo(file_path).fileName();
     }
 
-    // 6. 通知外层（chatdialog）刷新侧边栏头像
+    // 7. 通知外层（chatdialog）刷新侧边栏头像
     emit sig_reset_head();
 }

@@ -43,6 +43,7 @@ signals:
     void switchRegister(); // 自定义信号：点了"注册"按钮时发出，由 MainWindow 接收并切换界面
     void switchReset();    // 自定义信号：点了"忘记密码"时发出，由 MainWindow 接收并切到重置密码界面
     void sig_connect_tcp(ServerInfo);//发给长链接的信号
+    void sig_connect_res_server(ServerInfo);//发给资源服务器长链接（FileTcpMgr）的信号（day39）
 };
 
 #endif // LOGINDIALOG_H
