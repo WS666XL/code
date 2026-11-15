@@ -1,0 +1,22 @@
+# ===== 老师的参考仓库（自带 .git，不纳入本项目）=====
+llfcchat/
+
+# ===== CMake 构建产物 =====
+build/
+
+# ===== qmake / Qt 构建产物 =====
+*.o
+moc_*
+ui_*.h
+qrc_*.cpp
+.qmake.stash
+Makefile
+
+# ===== 可执行文件产物 =====
+bin/llfcchat
+
+# ===== Node 依赖 =====
+VarifyServer/node_modules/
+
+# ===== 含 SMTP 授权码的本地配置（保留 config.example.json 作为模板）=====
+VarifyServer/config.json
