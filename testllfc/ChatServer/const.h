@@ -26,6 +26,12 @@ enum class ChatMsgType {
 	FILE = 3,  //文件消息（与客户端 ChatMsgType::FILE 同号；day41 文件聊天复用图片的传输链路）
 };
 
+//会话形式：和客户端 ChatFormType 同号（1017 请求的 form_type 字段区分私聊/群聊）
+enum class ChatFormType {
+	PRIVATE = 0,
+	GROUP = 1,
+};
+
 
 // Defer类
 class Defer {
@@ -79,6 +85,8 @@ enum MSG_IDS {
 	ID_IMG_CHAT_MSG_REQ = 1035,       //图片聊天消息请求（先入库拿 message_id，文件随后走 1037 传资源服务器）
 	ID_IMG_CHAT_MSG_RSP = 1036,       //图片聊天消息回复（带入库后的 message_id）
 	ID_NOTIFY_IMG_CHAT_MSG_REQ = 1039, //通知用户图片聊天信息（资源服务器落盘完成后经 gRPC 触发转发）
+	ID_CREATE_GROUP_REQ = 1055,   //建群请求（发起人选好友成群，老师体系未用 1050+ 段）
+	ID_CREATE_GROUP_RSP = 1056,   //建群回复（带回 thread_id 和群名）
 };
 // 用户 IP 前缀，用于拼接用户 IP 对应的 Redis 键，例如：uip_1001
 #define USERIPPREFIX  "uip_"

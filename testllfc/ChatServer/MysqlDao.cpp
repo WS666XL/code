@@ -507,19 +507,22 @@ bool MysqlDao::GetUserThreads(
 	auto& conn = con->_con;
 
 	try {
+		//群聊分支 join group_chat 带出群名（客户端 1026 建群条目要用）；
+		//私聊分支 group_name 给空串，两边列数对齐才能 UNION ALL
 		std::string sql =
 			"WITH all_threads AS ( "
-			"  SELECT thread_id, 'private' AS type, user1_id, user2_id "
-			"    FROM private_chat "
-			"   WHERE (user1_id = ? OR user2_id = ?) "
-			"     AND thread_id > ? "
+			"  SELECT p.thread_id, 'private' AS type, p.user1_id, p.user2_id, '' AS group_name "
+			"    FROM private_chat p "
+			"   WHERE (p.user1_id = ? OR p.user2_id = ?) "
+			"     AND p.thread_id > ? "
 			"  UNION ALL "
-			"  SELECT thread_id, 'group'   AS type, 0 AS user1_id, 0 AS user2_id "
-			"    FROM group_chat_member "
-			"   WHERE user_id   = ? "
-			"     AND thread_id > ? "
+			"  SELECT g.thread_id, 'group' AS type, 0 AS user1_id, 0 AS user2_id, gc.group_name "
+			"    FROM group_chat_member g "
+			"    JOIN group_chat gc ON gc.thread_id = g.thread_id "
+			"   WHERE g.user_id = ? "
+			"     AND g.thread_id > ? "
 			") "
-			"SELECT thread_id, type, user1_id, user2_id "
+			"SELECT thread_id, type, user1_id, user2_id, group_name "
 			"  FROM all_threads "
 			" ORDER BY thread_id "
 			" LIMIT ?;";
@@ -546,6 +549,7 @@ bool MysqlDao::GetUserThreads(
 			cti->_type = res->getString("type");
 			cti->_user1_id = res->getInt64("user1_id");
 			cti->_user2_id = res->getInt64("user2_id");
+			cti->_group_name = res->getString("group_name");
 			tmp.push_back(cti);
 		}
 
@@ -666,6 +670,97 @@ bool MysqlDao::CreatePrivateChat(int user1_id, int user2_id, int& thread_id)
 		return false;
 	}
 	return false;
+}
+
+// ===== day41 群聊 =====
+// 建群（事务）：chat_thread(type='group') 拿自增 thread_id → group_chat 存群名/群主
+// → group_chat_member 插入全部成员（发起人 + 受邀者）。群不像私聊有"已存在就复用"
+// 的唯一键语义，每次调用都新建一个群
+bool MysqlDao::CreateGroup(int creator_uid, const std::string& name,
+	const std::vector<int>& member_uids, int& thread_id)
+{
+	auto con = pool_->getConnection();
+	if (!con) {
+		return false;
+	}
+
+	Defer defer([this, &con]() {
+		pool_->returnConnection(std::move(con));
+		});
+
+	auto& conn = con->_con;
+	try {
+		conn->setAutoCommit(false);
+
+		// 1. 插 chat_thread 拿自增 thread_id
+		std::unique_ptr<sql::PreparedStatement> pstmt_thread(
+			conn->prepareStatement("INSERT INTO chat_thread (type, created_at) VALUES ('group', NOW());"));
+		pstmt_thread->executeUpdate();
+
+		std::unique_ptr<sql::Statement> stmt_last(conn->createStatement());
+		std::unique_ptr<sql::ResultSet> res_last(stmt_last->executeQuery("SELECT LAST_INSERT_ID();"));
+		res_last->next();
+		thread_id = res_last->getInt(1);
+
+		// 2. 插 group_chat（群名/群主）
+		std::unique_ptr<sql::PreparedStatement> pstmt_group(
+			conn->prepareStatement("INSERT INTO group_chat (thread_id, group_name, owner_id, created_at) VALUES (?, ?, ?, NOW());"));
+		pstmt_group->setInt64(1, thread_id);
+		pstmt_group->setString(2, name);
+		pstmt_group->setInt64(3, creator_uid);
+		pstmt_group->executeUpdate();
+
+		// 3. 插全部群成员（发起人 + 受邀者，成员表复合主键天然去重）
+		std::unique_ptr<sql::PreparedStatement> pstmt_member(
+			conn->prepareStatement("INSERT INTO group_chat_member (thread_id, user_id, created_at) VALUES (?, ?, NOW());"));
+		pstmt_member->setInt64(1, thread_id);
+		pstmt_member->setInt64(2, creator_uid);
+		pstmt_member->executeUpdate();
+		for (auto uid : member_uids) {
+			if (uid == creator_uid) {
+				continue;   //发起人已插入
+			}
+			pstmt_member->setInt64(2, uid);
+			pstmt_member->executeUpdate();
+		}
+
+		conn->commit();
+		return true;
+	}
+	catch (sql::SQLException& e) {
+		conn->rollback();
+		std::cerr << "SQLException in CreateGroup: " << e.what()
+			<< " (Code: " << e.getErrorCode() << ")" << std::endl;
+		return false;
+	}
+}
+
+// 拉群成员 uid 列表：群消息转发时遍历用（调用方自行排除发送者）
+bool MysqlDao::GetGroupMembers(int thread_id, std::vector<int>& member_uids)
+{
+	auto con = pool_->getConnection();
+	if (!con) {
+		return false;
+	}
+
+	Defer defer([this, &con]() {
+		pool_->returnConnection(std::move(con));
+		});
+
+	try {
+		std::unique_ptr<sql::PreparedStatement> pstmt(
+			con->_con->prepareStatement("SELECT user_id FROM group_chat_member WHERE thread_id = ?"));
+		pstmt->setInt64(1, thread_id);
+		std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+		while (res->next()) {
+			member_uids.push_back(res->getInt("user_id"));
+		}
+		return true;
+	}
+	catch (sql::SQLException& e) {
+		std::cerr << "SQLException in GetGroupMembers: " << e.what() << std::endl;
+		return false;
+	}
 }
 
 // 按 thread_id 分页拉历史消息：message_id > lastId 正序翻页，多取一条判断 load_more

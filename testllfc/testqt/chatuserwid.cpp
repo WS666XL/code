@@ -23,6 +23,17 @@ void ChatUserWid::SetChatData(std::shared_ptr<ChatThreadData> chat_data) {
         return;
     }
 
+    // ===== day41 群会话条目 =====
+    // 群聊：显示群名 + 固定的群头像（成员头像暂不拼装，头像区用资源图）
+    if (_chat_data->IsGroup()) {
+        ui->user_name_lb->setText(_chat_data->GetGroupName());
+        ui->icon_lb->setPixmap(LoadAvatarPixmap(":/res/head_4.jpg", ui->icon_lb->size()));
+        ui->icon_lb->setScaledContents(true);
+        ui->label->setText(_chat_data->GetLastMsgTime());
+        ui->user_chat_lb->setText(_chat_data->GetLastMsg());
+        return;
+    }
+
     //私聊：根据会话里存的"对方uid"查对方资料，取名字和头像
     auto other_id = _chat_data->GetOtherId();
     auto other_info = UserMgr::GetInstance()->GetFriendById(other_id);

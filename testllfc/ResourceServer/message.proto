@@ -147,6 +147,20 @@ message NotifyChatImgRsp {
   int32 msg_type = 8;
 }
 
+// day41 群聊：建群（发起人从好友里选成员）
+message CreateGroupReq {
+  int32 uid = 1;                     //发起人 uid（自动进群且是 owner）
+  string name = 2;                   //群名
+  repeated int32 member_uids = 3;    //受邀成员 uid 列表（不含发起人）
+}
+
+message CreateGroupRsp {
+  int32 error = 1;
+  int32 thread_id = 2;               //群会话 id（客户端拿它建会话条目）
+  string name = 3;                   //群名
+  repeated int32 member_uids = 4;    //全部成员（含发起人）
+}
+
 service ChatService {
 	rpc NotifyAddFriend(AddFriendReq) returns (AddFriendRsp) {}
 	rpc RplyAddFriend(RplyFriendReq) returns (RplyFriendRsp) {}

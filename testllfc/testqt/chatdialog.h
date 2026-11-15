@@ -92,6 +92,8 @@ public slots:
     //day39：1036 自己发的图片入库回执（触发 1037 上传）/ 1039 收到对方图片消息
     void slot_chat_img_rsp(int thread_id, std::shared_ptr<ImgChatData> chat_data);
     void slot_img_chat_msg(std::shared_ptr<ImgChatData> imgchat);
+    //day41 群聊：1056 建群回包（发起人本地建群条目并跳转）
+    void slot_create_group_rsp(bool success, int thread_id, QString name, int member_count);
     //1026 回包：建会话数据和列表条目，没拉完就继续发 1025，拉完开始加载消息
     void slot_load_chat_thread(bool load_more, int last_thread_id,
         std::vector<std::shared_ptr<ChatThreadInfo>> chat_threads);

@@ -84,6 +84,9 @@ signals:
     // 1028 创建私聊回包：拿到 thread_id 后界面才能建会话条目
     void sig_create_private_chat(int uid, int other_id, int thread_id);
 
+    // day41 群聊：1056 建群回包（success/thread_id/群名/成员数）
+    void sig_create_group_rsp(bool success, int thread_id, QString name, int member_count);
+
     // 1030 历史消息回包：thread_id + 翻页游标 + 消息列表（基类指针，兼容后续图片消息）
     void sig_load_chat_msg(int thread_id, int message_id, bool load_more,
         std::vector<std::shared_ptr<ChatDataBase>> msg_list);

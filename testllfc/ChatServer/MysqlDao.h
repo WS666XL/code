@@ -179,6 +179,13 @@ public:
 		int& nextLastId);
 	// 创建（或复用已有的）私聊线程，thread_id 返回给调用方
 	bool CreatePrivateChat(int user1_id, int user2_id, int& thread_id);
+	// ===== day41 群聊 =====
+	// 建群：chat_thread(type='group') + group_chat(group_name/owner_id) + 群成员表
+	//（发起人也在成员表里），thread_id 返回给调用方
+	bool CreateGroup(int creator_uid, const std::string& name,
+		const std::vector<int>& member_uids, int& thread_id);
+	// 拉群成员 uid 列表（群消息转发时遍历用）
+	bool GetGroupMembers(int thread_id, std::vector<int>& member_uids);
 	// 按 thread_id 分页拉取历史消息，lastId 为上页最后一条 message_id
 	std::shared_ptr<PageResult> LoadChatMsg(int threadId, int lastId, int pageSize);
 	// 批量插入聊天消息，插入后回填自增 message_id

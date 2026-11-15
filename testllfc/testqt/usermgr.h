@@ -68,6 +68,11 @@ public:
     void AddTransFile(QString name, std::shared_ptr<MsgInfo> msg_info);
     std::shared_ptr<MsgInfo> GetTransFileByName(QString name);
     void RmvTransFile(QString name);
+    // day41 群聊：好友列表快照（建群对话框选成员用）
+    std::vector<std::shared_ptr<UserInfo>> GetFriendListSnapshot() {
+        std::lock_guard<std::mutex> lock(_mtx);
+        return _friend_list;
+    }
 private:
     UserMgr();
     std::shared_ptr<UserInfo> _user_info;

@@ -582,6 +582,8 @@ void TcpMgr::initHandlers()
             cti->_type = value["type"].toString();
             cti->_user1_id = value["user1_id"].toInt();
             cti->_user2_id = value["user2_id"].toInt();
+            //群聊时带群名（day41；私聊为空串）
+            cti->_group_name = value["group_name"].toString();
             chat_threads.push_back(cti);
         }
 
@@ -589,6 +591,30 @@ void TcpMgr::initHandlers()
         int next_last_id = jsonObj["next_last_id"].toInt();
         //发送信号通知界面
         emit sig_load_chat_thread(load_more, next_last_id, chat_threads);
+    });
+
+    //1056 建群回包：{error, thread_id, name, member_uids[]}。
+    //发起人收到后直接建群会话条目并跳转过去；受邀请成员下次登录 1025 自然看到
+    _handlers.insert(ID_CREATE_GROUP_RSP, [this](ReqId id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        qDebug() << "handle id is " << id << " data is " << data;
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+        if (jsonDoc.isNull()) {
+            qDebug() << "create group rsp json parse failed";
+            return;
+        }
+        QJsonObject jsonObj = jsonDoc.object();
+        int err = jsonObj["error"].toInt();
+        if (err != ErrorCodes::SUCCESS) {
+            qDebug() << "create group rsp error is " << err;
+            emit sig_create_group_rsp(false, 0, QString(), 0);
+            return;
+        }
+
+        auto thread_id = jsonObj["thread_id"].toInt();
+        auto name = jsonObj["name"].toString();
+        auto member_count = jsonObj["member_uids"].toArray().size();
+        emit sig_create_group_rsp(true, thread_id, name, member_count);
     });
 
     //1028 创建私聊回包：{error, uid, other_id, thread_id}

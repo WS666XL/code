@@ -12,6 +12,8 @@
 #include "conuseritem.h"
 #include "userinfopage.h"   // day36：用户信息页（设置入口）
 #include "filetcpmgr.h"     // day39：图片聊天上传（slot_chat_img_rsp 里发起 1037）
+#include "creategroupdlg.h" // day41：发起群聊对话框
+#include <QMenu>
 ChatDialog::ChatDialog(QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::ChatDialog),_mode(ChatUIMode::ChatMode),_state(ChatUIMode::ChatMode),_b_loading(false),
@@ -168,6 +170,29 @@ ChatDialog::ChatDialog(QWidget *parent)
             this, &ChatDialog::slot_chat_img_rsp);
     connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_img_chat_msg,
             this, &ChatDialog::slot_img_chat_msg);
+
+    //day41 群聊：1056 建群回包
+    connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_create_group_rsp,
+            this, &ChatDialog::slot_create_group_rsp);
+
+    //add_btn（搜索框旁"+"）：弹出菜单——发起群聊 / 添加好友
+    //（该按钮此前只做了样式没有行为，正好作为群聊入口）
+    connect(ui->add_btn, &ClickedBtn::clicked, this, [this]() {
+        QMenu menu(this);
+        auto* group_act = menu.addAction(QStringLiteral("发起群聊"));
+        auto* friend_act = menu.addAction(QStringLiteral("添加好友"));
+        auto* chosen = menu.exec(QCursor::pos());
+        if (chosen == group_act) {
+            //建群对话框：从好友列表多选成员 + 填群名
+            auto* dlg = new CreateGroupDlg(this);
+            dlg->setModal(true);
+            dlg->show();
+        }
+        else if (chosen == friend_act) {
+            //复用现有入口：切到"新的朋友"申请页
+            slot_switch_apply_friend_page();
+        }
+    });
 
     //连接 1026 会话列表回包
     connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_load_chat_thread,
@@ -333,6 +358,34 @@ void ChatDialog::slot_text_chat_msg(std::vector<std::shared_ptr<TextChatData>> m
         ui->chat_page->AppendChatMsg(msg);
     }
 
+}
+
+//1056 建群回包：发起人本地立即建群条目并跳转过去（群名来自回包；
+//受邀请成员不实时刷新，登录时 1026 自然带出）
+void ChatDialog::slot_create_group_rsp(bool success, int thread_id,
+    QString name, int member_count)
+{
+    if (!success) {
+        qDebug() << "create group failed";
+        return;
+    }
+
+    auto chat_thread_data = std::make_shared<ChatThreadData>(0, thread_id, 0,
+        ChatFormType::GROUP);
+    chat_thread_data->SetGroupName(name);
+    UserMgr::GetInstance()->AddChatThreadData(chat_thread_data, 0);
+
+    auto* chat_user_wid = new ChatUserWid();
+    chat_user_wid->SetChatData(chat_thread_data);
+    QListWidgetItem* item = new QListWidgetItem;
+    item->setSizeHint(chat_user_wid->sizeHint());
+    //新建的群排到列表最上面
+    ui->chat_user_list->insertItem(0, item);
+    ui->chat_user_list->setItemWidget(item, chat_user_wid);
+    _chat_thread_items.insert(thread_id, item);
+
+    qDebug() << "create group success: thread_id=" << thread_id
+             << "name=" << name << "members=" << member_count;
 }
 
 //刷新左侧聊天列表里某个会话条目的显示（最后消息内容 + 时间）
@@ -814,8 +867,20 @@ void ChatDialog::slot_load_chat_thread(bool load_more, int last_thread_id,
     std::vector<std::shared_ptr<ChatThreadInfo>> chat_threads)
 {
     for (auto& cti : chat_threads) {
-        //先处理单聊，群聊跳过，以后添加
+        // ===== day41 群会话：建群条目（other_id=0，群名来自 1026 回包）=====
         if (cti->_type == "group") {
+            auto chat_thread_data = std::make_shared<ChatThreadData>(0, cti->_thread_id, 0,
+                ChatFormType::GROUP);
+            chat_thread_data->SetGroupName(cti->_group_name);
+            UserMgr::GetInstance()->AddChatThreadData(chat_thread_data, 0);
+
+            auto* chat_user_wid = new ChatUserWid();
+            chat_user_wid->SetChatData(chat_thread_data);
+            QListWidgetItem* item = new QListWidgetItem;
+            item->setSizeHint(chat_user_wid->sizeHint());
+            ui->chat_user_list->addItem(item);
+            ui->chat_user_list->setItemWidget(item, chat_user_wid);
+            _chat_thread_items.insert(cti->_thread_id, item);
             continue;
         }
 

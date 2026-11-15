@@ -27,6 +27,14 @@ public:
 		bool& loadMore,
 		int& nextLastId);
 	bool CreatePrivateChat(int user1_id, int user2_id, int& thread_id);
+	// day41 群聊
+	bool CreateGroup(int creator_uid, const std::string& name,
+		const std::vector<int>& member_uids, int& thread_id) {
+		return _dao.CreateGroup(creator_uid, name, member_uids, thread_id);
+	}
+	bool GetGroupMembers(int thread_id, std::vector<int>& member_uids) {
+		return _dao.GetGroupMembers(thread_id, member_uids);
+	}
 	std::shared_ptr<PageResult> LoadChatMsg(int threadId, int lastId, int pageSize);
 	bool AddChatMsg(std::vector<std::shared_ptr<ChatMessage>>& chat_datas);
 private:

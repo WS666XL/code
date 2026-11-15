@@ -255,6 +255,7 @@ struct ChatThreadInfo {
     QString _type;     // "private" 私聊 or "group" 群聊
     int _user1_id;     //私聊时对应 private_chat.user1_id；群聊时设为 0
     int _user2_id;     //私聊时对应 private_chat.user2_id；群聊时设为 0
+    QString _group_name; //群聊时的群名（服务端 1026 回包 join group_chat 带出；私聊为空）
     ChatThreadInfo() = default;
 };
 
@@ -269,8 +270,11 @@ QString FormatChatListTime(const QString& chat_time);
 class ChatThreadData {
 public:
     ChatThreadData() = default;
-    ChatThreadData(int other_id, int thread_id, int last_msg_id):
-        _other_id(other_id), _thread_id(thread_id), _last_msg_id(last_msg_id){}
+    //form_type 缺省私聊：老的构造调用点不用改；群会话传 ChatFormType::GROUP
+    ChatThreadData(int other_id, int thread_id, int last_msg_id,
+        ChatFormType form_type = ChatFormType::PRIVATE)
+        :_other_id(other_id), _thread_id(thread_id), _last_msg_id(last_msg_id),
+         _form_type(form_type){}
     void AddMsg(std::shared_ptr<ChatDataBase> msg);   //按服务端 id 归档一条消息
     void MoveMsg(std::shared_ptr<ChatDataBase> msg);  //收到回执：把"未回复"的消息挪进正式缓存
     void SetLastMsgId(int msg_id);
@@ -285,11 +289,18 @@ public:
     int GetLastMsgId();
     QMap<QString, std::shared_ptr<ChatDataBase>>& GetMsgUnRspRef();
     void AppendUnRspMsg(QString unique_id, std::shared_ptr<ChatDataBase> base_msg);
+    // ===== day41 群聊 =====
+    bool IsGroup() const { return _form_type == ChatFormType::GROUP; }
+    QString GetGroupName() const { return _group_name; }
+    void SetGroupName(const QString& name) { _group_name = name; }
 private:
     //如果是私聊，则为对方的id；如果是群聊，则为0
     int _other_id = 0;
     int _thread_id = 0;
     int _last_msg_id = 0;
+    //会话形式：私聊/群聊（决定气泡 role 判定、列表条目显示、消息发送的目标字段）
+    ChatFormType _form_type = ChatFormType::PRIVATE;
+    QString _group_name;     //群聊时的群名（会话条目/聊天页标题显示用）
     QString _last_msg;       //最后一条消息的文本，聊天列表条目显示用
     QString _last_msg_time;  //最后一条消息的时间（服务端 "yyyy-MM-dd HH:mm:ss" 格式）
     //缓存消息 map，抽象为基类指针，兼容以后图片等其他类型消息

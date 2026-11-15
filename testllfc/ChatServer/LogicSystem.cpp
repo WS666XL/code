@@ -94,7 +94,7 @@ void LogicSystem::RegisterCallBacks() {
 		placeholders::_1, placeholders::_2, placeholders::_3);
 	_fun_callbacks[ID_LOAD_CHAT_MSG_REQ] = std::bind(&LogicSystem::LoadChatMsg, this,
 		placeholders::_1, placeholders::_2, placeholders::_3);
-	_fun_callbacks[ID_IMG_CHAT_MSG_REQ] = std::bind(&LogicSystem::DealChatImgMsg, this,
+	_fun_callbacks[ID_CREATE_GROUP_REQ] = std::bind(&LogicSystem::DealCreateGroup, this,
 		placeholders::_1, placeholders::_2, placeholders::_3);
 }
 bool LogicSystem::GetBaseInfo(std::string base_key, int uid, std::shared_ptr<UserInfo>& userinfo)
@@ -367,6 +367,8 @@ void LogicSystem::GetUserThreadsHandler(std::shared_ptr<CSession> session,
 		thread_value["type"] = thread->_type;
 		thread_value["user1_id"] = thread->_user1_id;
 		thread_value["user2_id"] = thread->_user2_id;
+		//群聊带群名（客户端建群条目显示用；私聊为空串）
+		thread_value["group_name"] = thread->_group_name;
 		rtvalue["threads"].append(thread_value);
 	}
 }
@@ -801,6 +803,9 @@ void LogicSystem::DealChatTextMsg(std::shared_ptr<CSession> session, const short
 
 	auto uid = root["fromuid"].asInt();
 	auto touid = root["touid"].asInt();
+	//会话形式（0=私聊 1=群聊；旧客户端不带该字段缺省为私聊）：
+	//群消息 touid=0 无单一接收者，通知时遍历群成员逐个推
+	auto form_type = root["form_type"].asInt();
 
 	const Json::Value  arrays = root["text_array"];
 
@@ -851,6 +856,56 @@ void LogicSystem::DealChatTextMsg(std::shared_ptr<CSession> session, const short
 		session->Send(return_str, ID_TEXT_CHAT_MSG_RSP);
 		});
 
+	auto& cfg = ConfigMgr::Inst();
+	auto self_name = cfg["SelfServer"]["Name"];
+
+	// ===== day41 群消息通知：遍历群成员逐个推 1019（发送者除外）=====
+	// 通知 JSON 与私聊完全同构（客户端按 thread_id 定位会话，touid 对群聊无意义），
+	// 气泡发送者由每条消息的 fromuid 区分；跨节点的成员复用现有 NotifyTextChatMsg
+	if (form_type == int(ChatFormType::GROUP)) {
+		std::vector<int> member_uids;
+		if (!MysqlMgr::GetInstance()->GetGroupMembers(thread_id, member_uids)) {
+			return;
+		}
+
+		for (auto m_uid : member_uids) {
+			if (m_uid == uid) {
+				continue;   //发送者自己不推（回包已确认）
+			}
+			auto to_str = std::to_string(m_uid);
+			auto to_ip_key = USERIPPREFIX + to_str;
+			std::string to_ip_value = "";
+			if (!RedisMgr::GetInstance()->Get(to_ip_key, to_ip_value)) {
+				continue;   //成员不在线，跳过（消息已落库，登录后走历史加载）
+			}
+
+			if (to_ip_value == self_name) {
+				auto m_session = UserMgr::GetInstance()->GetSession(m_uid);
+				if (m_session) {
+					std::string return_str = rtvalue.toStyledString();
+					m_session->Send(return_str, ID_NOTIFY_TEXT_CHAT_MSG_REQ);
+				}
+				continue;
+			}
+
+			//成员在别的节点：gRPC 通知那台节点转发（touid 填该成员 uid）
+			TextChatMsgReq text_msg_req;
+			text_msg_req.set_fromuid(uid);
+			text_msg_req.set_touid(m_uid);
+			text_msg_req.set_thread_id(thread_id);
+			for (const auto& chat_data : chat_datas) {
+				auto* text_msg = text_msg_req.add_textmsgs();
+				text_msg->set_unique_id(chat_data->unique_id);
+				text_msg->set_msgcontent(chat_data->content);
+				text_msg->set_msg_id(chat_data->message_id);
+				text_msg->set_chat_time(chat_data->chat_time);
+			}
+			ChatGrpcClient::GetInstance()->NotifyTextChatMsg(to_ip_value, text_msg_req, rtvalue);
+		}
+		return;
+	}
+
+	// ===== 私聊通知（现有逻辑）：查接收者所在节点 =====
 	//查询redis 查找touid对应的server ip
 	auto to_str = std::to_string(touid);
 	auto to_ip_key = USERIPPREFIX + to_str;
@@ -860,8 +915,6 @@ void LogicSystem::DealChatTextMsg(std::shared_ptr<CSession> session, const short
 		return;
 	}
 
-	auto& cfg = ConfigMgr::Inst();
-	auto self_name = cfg["SelfServer"]["Name"];
 	//对方在本节点则直接发通知
 	if (to_ip_value == self_name) {
 		auto session = UserMgr::GetInstance()->GetSession(touid);
@@ -955,6 +1008,53 @@ void LogicSystem::DealChatImgMsg(std::shared_ptr<CSession> session, const short&
 	Defer defer([this, &rtvalue, session]() {
 		std::string return_str = rtvalue.toStyledString();
 		session->Send(return_str, ID_IMG_CHAT_MSG_RSP);
+		});
+}
+
+// 1055 建群：发起人选好友成群。
+// 建群即生效（成员进 group_chat_member 表）——受邀请成员不实时收到通知，
+// 下次登录 1025 拉会话列表时自然看到群聊（与老师教程的离线处理水平一致）
+void LogicSystem::DealCreateGroup(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data)
+{
+	Json::Reader reader;
+	Json::Value root;
+	reader.parse(msg_data, root);
+
+	auto uid = root["uid"].asInt();
+	auto name = root["name"].asString();
+
+	Json::Value rtvalue;
+	rtvalue["error"] = ErrorCodes::Success;
+
+	// 受邀成员列表
+	std::vector<int> member_uids;
+	for (const auto& v : root["member_uids"]) {
+		member_uids.push_back(v.asInt());
+	}
+	// 群至少要有发起人之外的一个成员
+	if (member_uids.empty()) {
+		rtvalue["error"] = ErrorCodes::CREATE_CHAT_FAILED;
+		return;
+	}
+
+	int thread_id = 0;
+	bool res = MysqlMgr::GetInstance()->CreateGroup(uid, name, member_uids, thread_id);
+	if (!res) {
+		rtvalue["error"] = ErrorCodes::CREATE_CHAT_FAILED;
+		return;
+	}
+
+	rtvalue["thread_id"] = thread_id;
+	rtvalue["name"] = name;
+	//回传全部成员（含发起人），客户端可显示"共 N 人"
+	for (auto m_uid : member_uids) {
+		rtvalue["member_uids"].append(m_uid);
+	}
+	rtvalue["member_uids"].append(uid);
+
+	Defer defer([this, &rtvalue, session]() {
+		std::string return_str = rtvalue.toStyledString();
+		session->Send(return_str, ID_CREATE_GROUP_RSP);
 		});
 }
 

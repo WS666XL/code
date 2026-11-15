@@ -58,6 +58,8 @@ enum ReqId{
     ID_IMG_CHAT_MSG_REQ = 1035,      //图片聊天消息请求（先入库拿 message_id，文件随后走 1037 传资源服务器）
     ID_IMG_CHAT_MSG_RSP = 1036,      //图片聊天消息回复（带入库后的 message_id，收到后才开始传文件）
     ID_NOTIFY_IMG_CHAT_MSG_REQ = 1039, //通知用户图片聊天信息（资源服务器落盘完成后经 ChatServer 转发）
+    ID_CREATE_GROUP_REQ = 1055,      //建群请求（发起人选好友成群；老师体系未用 1050+ 段）
+    ID_CREATE_GROUP_RSP = 1056,      //建群回复（带回 thread_id/群名/成员列表）
 };
 
 // 统一错误码：网络层和业务层共用一套编号，便于判断成功与否

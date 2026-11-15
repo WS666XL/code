@@ -5,6 +5,7 @@
 #include<QTextEdit>
 #include<QFileInfo>
 #include<QStandardPaths>
+#include<QMessageBox>
 #include"chatitembase.h"
 #include"textbubble.h"
 #include"picturebubble.h"
@@ -68,14 +69,20 @@ void ChatPage::SetChatData(std::shared_ptr<ChatThreadData> chat_data) {
         return;
     }
 
-    auto other_id = _chat_data->GetOtherId();
-    auto friend_info = UserMgr::GetInstance()->GetFriendById(other_id);
-    //对方资料查不到：标题显示 uid 兜底，消息照常画
-    if (friend_info == nullptr) {
-        ui->title_lb->setText(QString::number(other_id));
+    // day41：群会话标题显示群名；私聊显示对方昵称/uid
+    if (_chat_data->IsGroup()) {
+        ui->title_lb->setText(_chat_data->GetGroupName());
     }
     else {
-        ui->title_lb->setText(friend_info->_name);
+        auto other_id = _chat_data->GetOtherId();
+        auto friend_info = UserMgr::GetInstance()->GetFriendById(other_id);
+        //对方资料查不到：标题显示 uid 兜底，消息照常画
+        if (friend_info == nullptr) {
+            ui->title_lb->setText(QString::number(other_id));
+        }
+        else {
+            ui->title_lb->setText(friend_info->_name);
+        }
     }
 
     clearItems();
@@ -330,6 +337,11 @@ void ChatPage::on_send_btn_clicked()
     ChatRole role = ChatRole::Self;
     QString userName = user_info->_name;
 
+    // day41 群聊：touid 无意义填 0（服务端按 thread_id + form_type 走群分支）；
+    // 私聊仍是对方 uid。请求 JSON 统一带 form_type 让服务端区分
+    bool is_group = _chat_data->IsGroup();
+    auto to_uid = is_group ? 0 : _chat_data->GetOtherId();
+
     const QVector<MsgInfo>& msgList = pTextEdit->getMsgList();
     QJsonObject textObj;
     QJsonArray textArray;
@@ -345,6 +357,14 @@ void ChatPage::on_send_btn_clicked()
             continue;
         }
 
+        // day41 基础版：群聊暂不支持图片/文件（1035 的群模式适配留待后续轮次）
+        if(is_group && (type == "image" || type == "file"))
+        {
+            QMessageBox::information(this, QStringLiteral("提示"),
+                QStringLiteral("群聊暂不支持发送图片/文件"));
+            continue;
+        }
+
         // ===== day39 图片 / day41 文件消息分支（共用 1035-1039 链路）=====
         // 时序（老师版设计）：先发 1035 让服务端入库拿 message_id，
         // 气泡立即显示本地内容；收到 1036 回包后才发起 1037 文件上传，
@@ -357,7 +377,8 @@ void ChatPage::on_send_btn_clicked()
             if (txt_size) {
                 textObj["text_array"] = textArray;
                 textObj["fromuid"] = user_info->_uid;
-                textObj["touid"] = _chat_data->GetOtherId();
+                textObj["touid"] = to_uid;
+                textObj["form_type"] = is_group ? 1 : 0;
                 textObj["thread_id"] = thread_id;
                 QJsonDocument doc(textObj);
                 QByteArray jsonData = doc.toJson(QJsonDocument::Compact);
@@ -397,7 +418,7 @@ void ChatPage::on_send_btn_clicked()
             //1035 请求（与图片消息同构，多带 msg_type/file_name 两个区分字段）
             QJsonObject imgObj;
             imgObj["fromuid"] = user_info->_uid;
-            imgObj["touid"] = _chat_data->GetOtherId();
+            imgObj["touid"] = to_uid;
             imgObj["thread_id"] = thread_id;
             imgObj["md5"] = msg_info->_md5;
             imgObj["name"] = msg_info->_unique_name;
@@ -431,7 +452,8 @@ void ChatPage::on_send_btn_clicked()
         //单包超过 1024 字节就先把之前攒的文本发出去，防止包过大
         if(txt_size + msgList[i].content.length()> 1024){
             textObj["fromuid"] = user_info->_uid;
-            textObj["touid"] = _chat_data->GetOtherId();
+            textObj["touid"] = to_uid;
+            textObj["form_type"] = is_group ? 1 : 0;
             textObj["thread_id"] = thread_id;
             textObj["text_array"] = textArray;
             QJsonDocument doc(textObj);
@@ -475,7 +497,8 @@ void ChatPage::on_send_btn_clicked()
         //发送给服务器
         textObj["text_array"] = textArray;
         textObj["fromuid"] = user_info->_uid;
-        textObj["touid"] = _chat_data->GetOtherId();
+        textObj["touid"] = to_uid;
+        textObj["form_type"] = is_group ? 1 : 0;
         textObj["thread_id"] = thread_id;
         QJsonDocument doc(textObj);
         QByteArray jsonData = doc.toJson(QJsonDocument::Compact);

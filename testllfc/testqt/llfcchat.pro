@@ -53,6 +53,7 @@ SOURCES += \
     messagetextedit.cpp \
     picturebubble.cpp \
     filebubble.cpp \
+    creategroupdlg.cpp \
     registerdialog.cpp \
     resetdialog.cpp \
     searchlist.cpp \
@@ -102,6 +103,7 @@ HEADERS += \
     messagetextedit.h \
     picturebubble.h \
     filebubble.h \
+    creategroupdlg.h \
     registerdialog.h \
     resetdialog.h \
     searchlist.h \

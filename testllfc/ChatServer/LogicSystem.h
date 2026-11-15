@@ -48,6 +48,8 @@ private:
 	// 分页加载某个线程的历史消息（1029→1030）
 	void LoadChatMsg(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
 	void DealChatImgMsg(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
+	// day41 群聊：建群（发起人选好友成群）
+	void DealCreateGroup(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
 	bool GetBaseInfo(std::string base_key, int uid, std::shared_ptr<UserInfo>& userinfo);
 	bool isPureDigit(const std::string& str);
 	void GetUserByUid(std::string uid_str, Json::Value& rtvalue);
