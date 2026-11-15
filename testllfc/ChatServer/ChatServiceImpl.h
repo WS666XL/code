@@ -22,6 +22,8 @@ using message::TextChatData;
 
 using message::KickUserReq;
 using message::KickUserRsp;
+using message::NotifyChatImgReq;
+using message::NotifyChatImgRsp;
 
 class CServer; // 前置声明：RegisterServer 参数用到
 
@@ -37,6 +39,10 @@ public:
 
 	Status NotifyTextChatMsg(::grpc::ServerContext* context,
 		const TextChatMsgReq* request, TextChatMsgRsp* response) override;
+
+	// 资源服务器图片落盘完成后调这里：转发 1039 图片消息通知给本节点的收图人
+	Status NotifyChatImgMsg(::grpc::ServerContext* context,
+		const NotifyChatImgReq* request, NotifyChatImgRsp* response) override;
 
 	// 跨服踢人：另一台 ChatServer 发现本节点持有 uid 的旧连接时，通过 gRPC 调这里
 	Status NotifyKickUser(::grpc::ServerContext* context,

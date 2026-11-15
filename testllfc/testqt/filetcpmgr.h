@@ -31,6 +31,8 @@ enum ResReqId {
     RES_ID_UPLOAD_HEAD_ICON_RSP = 1032, //头像上传回包：每块落盘后回一条；最后一块落盘+DB更新后才回
     RES_ID_DOWNLOAD_FILE_REQ = 1033,    //文件下载请求（老师消息 ID 1033：按 owner_uid+name 定位，分块回 base64）
     RES_ID_DOWNLOAD_FILE_RSP = 1034,    //文件下载回包：每块一条，is_last=1 表示收完
+    RES_ID_IMG_CHAT_UPLOAD_REQ = 1037,  //上传聊天图片资源（老师消息 ID 1037：带 message_id/sender/receiver）
+    RES_ID_IMG_CHAT_UPLOAD_RSP = 1038,  //上传聊天图片资源回包：每块落盘后回一条
 };
 
 // 包头长度宏以 global.h 为准；这里兜底 #ifndef 保护，
@@ -58,8 +60,16 @@ public:
     // 下载头像（老师消息 1033 链路）：本地没有对方的头像文件时发起。
     // iconFileName 是服务器文件名（如 head.png），ownerUid 是头像所有者的 uid；
     // 文件保存到 AppData/<ownerUid>/avatars/<iconFileName>，下载完成后发
-    // sig_avatar_downloaded(iconFileName)（同一文件名同时只会发一个下载请求）
+    // sig_file_downloaded(iconFileName)（同一文件名同时只会发一个下载请求）
     void DownloadAvatar(const QString& iconFileName, int ownerUid);
+    // 下载聊天图片（老师消息 1033 链路的图片分支）：
+    // 图片服务器落盘在 output/static/<senderUid>/<imgName>，本地缓存到
+    // AppData/<我的uid>/chatimg/<senderUid>/<imgName>；完成后发 sig_file_downloaded
+    void DownloadChatImage(const QString& imgName, int senderUid);
+    // 上传聊天图片（老师消息 1037 链路）：1035 拿到 message_id 后调用。
+    // 按唯一文件名从 UserMgr 取回 MsgInfo，读本地文件一口气分块发 1037
+    //（每块带 message_id/sender/receiver；服务端最后一块落盘后更新消息状态并通知对方）
+    bool UploadChatImage(const QString& uniqueName);
     // 发一条 1033 下载请求（DownloadAvatar 首块和 1034 续块都走它）：
     // 服务端按 output/static/<ownerUid>/<fileName> 定位文件，按 seq 偏移读分块回包
     void SendDownloadReq(const QString& fileName, int ownerUid,
@@ -106,7 +116,7 @@ signals:
     void sig_upload_progress(int trans_size, int total_size); // 每块落盘后的进度回执
     void sig_upload_done(QString name);   // last==1：整份文件上传完成
     void sig_upload_head_done(QString name); // 头像上传完成：服务器已落盘+更新 DB/Redis 后回的 1032
-    void sig_avatar_downloaded(QString name); // 头像下载完成：本地文件已就绪，界面可重新加载显示
+    void sig_file_downloaded(QString name); // 1033 下载完成：本地文件已就绪（头像/聊天图片共用）
     void sig_connection_closed();         // 连接被服务器断开
 };
 

@@ -55,6 +55,9 @@ enum ReqId{
     ID_CREATE_PRIVATE_CHAT_RSP = 1028, //创建私聊回复（带回 thread_id）
     ID_LOAD_CHAT_MSG_REQ = 1029,     //分页加载某个会话的历史消息请求
     ID_LOAD_CHAT_MSG_RSP = 1030,     //分页加载历史消息回复
+    ID_IMG_CHAT_MSG_REQ = 1035,      //图片聊天消息请求（先入库拿 message_id，文件随后走 1037 传资源服务器）
+    ID_IMG_CHAT_MSG_RSP = 1036,      //图片聊天消息回复（带入库后的 message_id，收到后才开始传文件）
+    ID_NOTIFY_IMG_CHAT_MSG_REQ = 1039, //通知用户图片聊天信息（资源服务器落盘完成后经 ChatServer 转发）
 };
 
 // 统一错误码：网络层和业务层共用一套编号，便于判断成功与否
@@ -129,8 +132,16 @@ enum class ChatMsgType {
 };
 struct MsgInfo{
     QString msgFlag;//"text,image,file"
-    QString content;//表示文件和图像的url,文本信息
+    QString content;//图片消息=本地文件路径（上传用），文本消息=文字内容
     QPixmap pixmap;//文件和图片的缩略图
+
+    // ===== 图片消息专用字段（day39 图片聊天）=====
+    QString _md5;           //图片文件 MD5（随协议带，本版不做秒传/续传，先保留）
+    QString _unique_name;   //上传后的唯一文件名（uuid+原后缀），落盘/下载/历史记录都用它
+    qint64 _total_size = 0; //图片文件字节数（1035 请求与占位气泡用）
+    int _msg_id = 0;        //服务端 chat_message.message_id（1036 回包回填）
+    int _sender = 0;        //发送者 uid
+    int _receiver = 0;      //接收者 uid
 };
 //申请好友标签输入框最低长度
 const int MIN_APPLY_LABEL_ED_LEN = 40;

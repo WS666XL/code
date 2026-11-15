@@ -61,6 +61,13 @@ public:
     //加载完调 GetNextLoadData 走到下一个，返回 nullptr 表示全部加载完
     std::shared_ptr<ChatThreadData> GetCurLoadData();
     std::shared_ptr<ChatThreadData> GetNextLoadData();
+
+    //==== 图片传输管理（day39 图片聊天）====
+    //唯一文件名 → 图片消息信息：发送方收到 1036 回包后按名字取回 MsgInfo
+    //发起 1037 上传；接收方收到 1039 通知时登记占位信息并触发下载
+    void AddTransFile(QString name, std::shared_ptr<MsgInfo> msg_info);
+    std::shared_ptr<MsgInfo> GetTransFileByName(QString name);
+    void RmvTransFile(QString name);
 private:
     UserMgr();
     std::shared_ptr<UserInfo> _user_info;
@@ -80,6 +87,8 @@ private:
     int _last_chat_thread_id;
     //对方 uid → thread_id 的映射，"从联系人/搜索跳转聊天"时先查它
     QMap<int, int> _uid_to_thread_id;
+    //传输中的图片消息：唯一文件名 → MsgInfo（1035~1037/1039 全程靠它串联）
+    QHash<QString, std::shared_ptr<MsgInfo>> _trans_files;
     //锁：TcpMgr 的回调线程和 UI 线程都可能读写上面的 map，加锁保护
     std::mutex _mtx;
 };

@@ -680,12 +680,111 @@ void TcpMgr::initHandlers()
                 continue;
             }
 
-            //图片等其他类型本轮不支持，直接跳过（不画、不存）
+            //图片消息（msg_type=PIC）：content 存唯一文件名，本地多半没有图片文件，
+            //构造占位 MsgInfo（预览图空白），气泡层发现本地缺图会自动发起下载
+            if (msg_type == int(ChatMsgType::PIC)) {
+                auto msg_info = std::make_shared<MsgInfo>();
+                msg_info->msgFlag = "image";
+                msg_info->_unique_name = msg_content;
+                msg_info->_msg_id = msg_id;
+                msg_info->_sender = send_uid;
+                msg_info->_receiver = UserMgr::GetInstance()->GetUid();
+                auto chat_data = std::make_shared<ImgChatData>(msg_info, "",
+                    thread_id, ChatFormType::PRIVATE, ChatMsgType::PIC,
+                    send_uid, status, chat_time);
+                chat_data->SetMsgId(msg_id);
+                chat_datas.push_back(chat_data);
+                continue;
+            }
+
+            //视频/文件等其他类型本轮不支持，直接跳过（不画、不存）
             qDebug() << "skip unsupported msg_type " << msg_type << " in thread " << thread_id;
         }
 
         //发送信号通知界面
         emit sig_load_chat_msg(thread_id, last_msg_id, load_more, chat_datas);
+    });
+
+    // 1036 图片消息回包：自己发的图片消息已入库（带服务端 message_id）。
+    // 更新 MsgInfo 后通知界面改气泡状态；message_id 就绪是发起 1037 文件上传
+    // 的前置条件（服务端落盘后要按 message_id 更新状态并通知对方）
+    _handlers.insert(ID_IMG_CHAT_MSG_RSP, [this](ReqId id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+        if (jsonDoc.isNull()) {
+            qDebug() << "TcpMgr img chat rsp json parse failed";
+            return;
+        }
+        QJsonObject jsonObj = jsonDoc.object();
+        int err = jsonObj["error"].toInt();
+        if (err != ErrorCodes::SUCCESS) {
+            qDebug() << "TcpMgr img chat rsp error is " << err;
+            return;
+        }
+
+        auto thread_id = jsonObj["thread_id"].toInt();
+        auto unique_id = jsonObj["unique_id"].toString();
+        auto unique_name = jsonObj["unique_name"].toString();
+        auto sender = jsonObj["fromuid"].toInt();
+        auto receiver = jsonObj["touid"].toInt();
+        auto msg_id = jsonObj["message_id"].toInt();
+        QString chat_time = jsonObj["chat_time"].toString();
+        int status = jsonObj["status"].toInt();
+
+        auto msg_info = UserMgr::GetInstance()->GetTransFileByName(unique_name);
+        if (!msg_info) {
+            qDebug() << "TcpMgr img chat rsp: trans file not found:" << unique_name;
+            return;
+        }
+        //回填 1037 上传要用的身份信息
+        msg_info->_msg_id = msg_id;
+        msg_info->_sender = sender;
+        msg_info->_receiver = receiver;
+
+        auto chat_data = std::make_shared<ImgChatData>(msg_info, unique_id, thread_id,
+            ChatFormType::PRIVATE, ChatMsgType::PIC, sender, status, chat_time);
+        chat_data->SetMsgId(msg_id);
+
+        emit sig_chat_img_rsp(thread_id, chat_data);
+    });
+
+    // 1039 图片消息通知：对方发的图片（文件已落盘完成才通知，可立即下载）。
+    // 建占位 MsgInfo + 气泡，气泡层发现本地缺图会自动发起 1033 下载
+    _handlers.insert(ID_NOTIFY_IMG_CHAT_MSG_REQ, [this](ReqId id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+        if (jsonDoc.isNull()) {
+            qDebug() << "TcpMgr notify img chat json parse failed";
+            return;
+        }
+        QJsonObject jsonObj = jsonDoc.object();
+        if (jsonObj["error"].toInt() != ErrorCodes::SUCCESS) {
+            qDebug() << "TcpMgr notify img chat error is " << jsonObj["error"].toInt();
+            return;
+        }
+
+        auto thread_id = jsonObj["thread_id"].toInt();
+        auto sender_id = jsonObj["sender_id"].toInt();
+        auto message_id = jsonObj["message_id"].toInt();
+        auto img_name = jsonObj["img_name"].toString();
+        auto total_size = static_cast<qint64>(jsonObj["total_size"].toString().toLongLong());
+
+        //占位 MsgInfo：content 置空（本地无文件），图片就绪后按缓存路径加载
+        auto msg_info = std::make_shared<MsgInfo>();
+        msg_info->msgFlag = "image";
+        msg_info->_unique_name = img_name;
+        msg_info->_msg_id = message_id;
+        msg_info->_sender = sender_id;
+        msg_info->_receiver = UserMgr::GetInstance()->GetUid();
+        msg_info->_total_size = total_size;
+
+        UserMgr::GetInstance()->AddTransFile(img_name, msg_info);
+
+        auto img_chat_data = std::make_shared<ImgChatData>(msg_info, "",
+            thread_id, ChatFormType::PRIVATE, ChatMsgType::PIC,
+            sender_id, MsgStatus::READED);
+
+        emit sig_img_chat_msg(img_chat_data);
     });
 
 }

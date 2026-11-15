@@ -33,6 +33,8 @@ public:
     void AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp=true);
     //收到 1018 回执后：把气泡旁的状态图标从未读改成回执状态
     void UpdateChatStatus(std::shared_ptr<ChatDataBase> msg);
+    //收到 1036 回包后：自己发的图片消息气泡改回执状态（随后发起 1037 上传）
+    void UpdateImgChatStatus(std::shared_ptr<ImgChatData> msg);
 protected:
     // 重写绘图事件：背景是圆角矩形，所以自己画，不交给 QWidget 默认画
    virtual void paintEvent(QPaintEvent *event) override;
@@ -47,6 +49,9 @@ private:
     QHash<QString, ChatItemBase*> _unrsp_item_map;
     //管理已回执的消息气泡：key 是服务端 msg_id（以后做图片进度更新用得上）
     QHash<int, ChatItemBase*> _base_item_map;
+    //本会话里"本地缺图、等待下载"的图片气泡：key 是图片唯一文件名。
+    //1033 下载完成（sig_file_downloaded）后按名字找到气泡把占位图换成真图
+    QHash<QString, class PictureBubble*> _img_bubble_map;
 };
 
 #endif // CHATPAGE_H

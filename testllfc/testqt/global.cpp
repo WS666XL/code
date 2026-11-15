@@ -53,7 +53,7 @@ QList<PendingAvatarLabel>& PendingAvatarLabels()
 void EnsureAvatarSignalConnected()
 {
     static const bool connected = []() {
-        QObject::connect(FileTcpMgr::GetInstance().get(), &FileTcpMgr::sig_avatar_downloaded,
+        QObject::connect(FileTcpMgr::GetInstance().get(), &FileTcpMgr::sig_file_downloaded,
             [](const QString& name) {
                 auto& list = PendingAvatarLabels();
                 for (auto it = list.begin(); it != list.end();) {

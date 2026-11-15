@@ -93,3 +93,75 @@ bool MysqlDao::UpdateHeadInfo(int uid, const std::string& icon)
 		return false;
 	}
 }
+
+//按 message_id 读图片消息详情：图片文件传完后推 gRPC 通知时，
+//需要拿发件人/收件人/唯一文件名（content）重新组 NotifyChatImgReq
+std::shared_ptr<ChatMessage> MysqlDao::GetChatMsgById(int message_id)
+{
+	auto con = pool_->getConnection();
+	if (con == nullptr) {
+		return nullptr;
+	}
+
+	Defer defer([this, &con]() {
+		pool_->returnConnection(std::move(con));
+		});
+
+	try {
+		std::unique_ptr<sql::PreparedStatement> pstmt(
+			con->_con->prepareStatement("SELECT * FROM chat_message WHERE message_id = ?"));
+		pstmt->setInt(1, message_id);
+
+		std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+		std::shared_ptr<ChatMessage> msg_ptr = nullptr;
+		while (res->next()) {
+			msg_ptr.reset(new ChatMessage);
+			msg_ptr->message_id = message_id;
+			msg_ptr->sender_id = res->getInt("sender_id");
+			msg_ptr->recv_id = res->getInt("recv_id");
+			msg_ptr->thread_id = res->getInt("thread_id");
+			msg_ptr->content = res->getString("content");
+			break;
+		}
+		return msg_ptr;
+	}
+	catch (sql::SQLException& e) {
+		std::cerr << "SQLException in GetChatMsgById: " << e.what() << std::endl;
+		return nullptr;
+	}
+}
+
+//图片消息上传状态：图片先入库（status=0 表示资源未上传），
+//最后一块文件落盘成功后置 2（READED），与文本消息的最终状态对齐
+bool MysqlDao::UpdateUploadStatus(int chat_message_id)
+{
+	auto con = pool_->getConnection();
+	if (!con) {
+		return false;
+	}
+	Defer defer([this, &con]() {
+		pool_->returnConnection(std::move(con));
+		});
+
+	auto& conn = con->_con;
+	try {
+		std::string update_sql =
+			"UPDATE chat_message SET status = ? WHERE message_id = ?;";
+
+		std::unique_ptr<sql::PreparedStatement> pstmt(conn->prepareStatement(update_sql));
+		pstmt->setInt(1, 2);   // MsgStatus::READED
+		pstmt->setInt64(2, chat_message_id);
+
+		int affected_rows = pstmt->executeUpdate();
+		if (affected_rows == 0) {
+			std::cerr << "No chat message found with message_id: " << chat_message_id << std::endl;
+			return false;
+		}
+
+		return true;
+	}
+	catch (sql::SQLException& e) {
+		std::cerr << "SQLException in UpdateUploadStatus: " << e.what() << std::endl;
+		return false;
+	}
+}

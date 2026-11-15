@@ -75,6 +75,9 @@ enum MSG_IDS {
 	ID_CREATE_PRIVATE_CHAT_RSP = 1028, //创建私聊回复
 	ID_LOAD_CHAT_MSG_REQ = 1029,      //加载聊天消息请求
 	ID_LOAD_CHAT_MSG_RSP = 1030,      //加载聊天消息回复
+	ID_IMG_CHAT_MSG_REQ = 1035,       //图片聊天消息请求（先入库拿 message_id，文件随后走 1037 传资源服务器）
+	ID_IMG_CHAT_MSG_RSP = 1036,       //图片聊天消息回复（带入库后的 message_id）
+	ID_NOTIFY_IMG_CHAT_MSG_REQ = 1039, //通知用户图片聊天信息（资源服务器落盘完成后经 gRPC 触发转发）
 };
 // 用户 IP 前缀，用于拼接用户 IP 对应的 Redis 键，例如：uip_1001
 #define USERIPPREFIX  "uip_"

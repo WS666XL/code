@@ -127,6 +127,35 @@ Status ChatServiceImpl::NotifyTextChatMsg(::grpc::ServerContext* context,
 	return Status::OK;
 }
 
+// 资源服务器在聊天图片完整落盘后调过来：把图片消息通知转发给本节点的收图人。
+// 客户端收到 1039 后建占位气泡，并按 img_name 向资源服务器下载图片
+Status ChatServiceImpl::NotifyChatImgMsg(::grpc::ServerContext* context,
+	const NotifyChatImgReq* request, NotifyChatImgRsp* reply) {
+	//查找收图人是否在本服务器
+	auto touid = request->to_uid();
+	auto session = UserMgr::GetInstance()->GetSession(touid);
+	reply->set_error(ErrorCodes::Success);
+
+	//用户不在内存中（离线/在另一节点）则直接返回，消息已落库，登录后走历史记录加载
+	if (session == nullptr) {
+		return Status::OK;
+	}
+
+	//组织 1039 通知（字段名与老师版客户端解析保持一致）
+	Json::Value rtvalue;
+	rtvalue["error"] = ErrorCodes::Success;
+	rtvalue["message_id"] = request->message_id();
+	rtvalue["sender_id"] = request->from_uid();
+	rtvalue["receiver_id"] = request->to_uid();
+	rtvalue["img_name"] = request->file_name();
+	rtvalue["total_size"] = std::to_string(request->total_size());
+	rtvalue["thread_id"] = request->thread_id();
+
+	std::string return_str = rtvalue.toStyledString();
+	session->Send(return_str, ID_NOTIFY_IMG_CHAT_MSG_REQ);
+	return Status::OK;
+}
+
 
 bool ChatServiceImpl::GetBaseInfo(std::string base_key, int uid, std::shared_ptr<UserInfo>& userinfo)
 {

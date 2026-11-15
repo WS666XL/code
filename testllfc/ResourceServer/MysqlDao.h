@@ -148,8 +148,9 @@ private:
 	std::thread _check_thread;
 };
 
-//DAO 层：资源服务器只做两件事——按 uid 读整行用户信息（写 Redis 缓存用）、
-//更新 user.icon。其他业务（注册/好友/聊天记录）都归 ChatServer 的 DAO 管
+//DAO 层：资源服务器只做四件事——按 uid 读整行用户信息（写 Redis 缓存用）、
+//更新 user.icon、按 message_id 读图片消息详情（推 gRPC 通知用）、
+//更新图片消息上传状态。其他业务（注册/好友/文本聊天）都归 ChatServer 的 DAO 管
 class MysqlDao
 {
 public:
@@ -157,6 +158,8 @@ public:
 	~MysqlDao();
 	std::shared_ptr<UserInfo> GetUser(int uid);
 	bool UpdateHeadInfo(int uid, const std::string& icon);
+	std::shared_ptr<ChatMessage> GetChatMsgById(int message_id);
+	bool UpdateUploadStatus(int chat_message_id);
 private:
 	std::unique_ptr<MySqlPool> pool_;
 };

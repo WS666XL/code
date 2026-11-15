@@ -19,6 +19,12 @@ public:
 	std::shared_ptr<UserInfo> GetUser(int uid) {
 		return _dao.GetUser(uid);
 	}
+	std::shared_ptr<ChatMessage> GetChatMsgById(int message_id) {
+		return _dao.GetChatMsgById(message_id);
+	}
+	bool UpdateUploadStatus(int chat_message_id) {
+		return _dao.UpdateUploadStatus(chat_message_id);
+	}
 private:
 	MysqlMgr() {
 	}

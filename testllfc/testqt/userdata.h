@@ -226,6 +226,29 @@ public:
 
 Q_DECLARE_METATYPE(std::vector<std::shared_ptr<TextChatData>>)
 
+//图片消息数据：继承 ChatDataBase 的公共字段（msg_id/thread_id/发送者/状态），
+//额外挂一份 MsgInfo（图片本地路径、唯一文件名、缩略图等）。
+//发送者用它组织 1035/1037，接收者用它建占位气泡并触发图片下载
+class ImgChatData : public ChatDataBase {
+public:
+    ImgChatData(std::shared_ptr<MsgInfo> msg_info, QString unique_id,
+        int thread_id, ChatFormType form_type, ChatMsgType msg_type,
+        int send_uid, int status, QString chat_time = "")
+        : ChatDataBase(unique_id, thread_id, form_type, msg_type,
+            msg_info->_unique_name, send_uid, status, chat_time),
+        _msg_info(msg_info)
+    {
+        //图片消息的 msg_id 存在 MsgInfo 里（1036 回包后回填），同步到基类字段
+        _msg_id = _msg_info->_msg_id;
+    }
+
+    ~ImgChatData() override {}
+
+    std::shared_ptr<MsgInfo> _msg_info;
+};
+
+Q_DECLARE_METATYPE(std::shared_ptr<ImgChatData>)
+
 //一条聊天线程（会话）的描述信息，来自 1026 回包的 threads 数组
 struct ChatThreadInfo {
     int _thread_id;

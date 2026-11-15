@@ -87,6 +87,13 @@ signals:
     // 1030 历史消息回包：thread_id + 翻页游标 + 消息列表（基类指针，兼容后续图片消息）
     void sig_load_chat_msg(int thread_id, int message_id, bool load_more,
         std::vector<std::shared_ptr<ChatDataBase>> msg_list);
+
+    // ===== day39 图片聊天 =====
+    // 1036 回包：自己发的图片消息已入库，带服务端 message_id（界面更新气泡状态，
+    // FileTcpMgr 收到信号链后发起 1037 文件上传）
+    void sig_chat_img_rsp(int thread_id, std::shared_ptr<ImgChatData> chat_data);
+    // 1039 通知：收到别人的图片消息（占位气泡，随后自动下载图片）
+    void sig_img_chat_msg(std::shared_ptr<ImgChatData> imgchat);
 };
 
 #endif // TCPMGR_H

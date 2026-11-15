@@ -11,6 +11,7 @@
 #include"usermgr.h"
 #include "conuseritem.h"
 #include "userinfopage.h"   // day36：用户信息页（设置入口）
+#include "filetcpmgr.h"     // day39：图片聊天上传（slot_chat_img_rsp 里发起 1037）
 ChatDialog::ChatDialog(QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::ChatDialog),_mode(ChatUIMode::ChatMode),_state(ChatUIMode::ChatMode),_b_loading(false),
@@ -161,6 +162,12 @@ ChatDialog::ChatDialog(QWidget *parent)
     //连接对端消息通知（1019）
     connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_text_chat_msg,
             this, &ChatDialog::slot_text_chat_msg);
+
+    //day39 图片聊天：1036 自己发的图入库回执 / 1039 收到对方图片
+    connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_chat_img_rsp,
+            this, &ChatDialog::slot_chat_img_rsp);
+    connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_img_chat_msg,
+            this, &ChatDialog::slot_img_chat_msg);
 
     //连接 1026 会话列表回包
     connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_load_chat_thread,
@@ -339,6 +346,46 @@ void ChatDialog::RefreshChatListItem(int thread_id, std::shared_ptr<ChatThreadDa
     if (item_wid) {
         item_wid->SetChatData(thread_data);
     }
+}
+
+//1036 回包：自己发的图片消息已入库（拿到 message_id）。
+//归档到会话缓存 + 当前会话刷新气泡状态；发起 1037 上传放在这里——
+//不依赖气泡是否在前台，用户切走会话图片也能正常传
+void ChatDialog::slot_chat_img_rsp(int thread_id, std::shared_ptr<ImgChatData> chat_data)
+{
+    auto thread_data = UserMgr::GetInstance()->GetChatThreadByThreadId(thread_id);
+    if (thread_data) {
+        //按 unique_id 把未回执区的消息挪进正式缓存（与文本消息 1018 回执同款）
+        thread_data->MoveMsg(chat_data);
+        RefreshChatListItem(thread_id, thread_data);
+    }
+
+    if (_cur_chat_thread_id == thread_id) {
+        ui->chat_page->UpdateImgChatStatus(chat_data);
+    }
+
+    //message_id 已就绪：发起 1037 分块上传（服务端落盘完成后会通知对方）
+    FileTcpMgr::GetInstance()->UploadChatImage(chat_data->_msg_info->_unique_name);
+}
+
+//1039 通知：收到对方的图片消息（文件已就绪）。归档 + 当前会话直接画气泡，
+//气泡层发现本地缺图会自动发起 1033 下载并在完成后替换占位图
+void ChatDialog::slot_img_chat_msg(std::shared_ptr<ImgChatData> imgchat)
+{
+    auto thread_id = imgchat->GetThreadId();
+    auto thread_data = UserMgr::GetInstance()->GetChatThreadByThreadId(thread_id);
+    if (!thread_data) {
+        return;
+    }
+
+    thread_data->AddMsg(imgchat);
+    RefreshChatListItem(thread_id, thread_data);
+
+    if (_cur_chat_thread_id != thread_id) {
+        return;
+    }
+
+    ui->chat_page->AppendChatMsg(imgchat);
 }
 
 void ChatDialog::UpdateChatMsg(std::vector<std::shared_ptr<TextChatData> > msgdata)

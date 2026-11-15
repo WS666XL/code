@@ -4,6 +4,7 @@
 #include "base64.h"
 #include "MysqlMgr.h"
 #include "RedisMgr.h"
+#include "ChatServerGrpcClient.h"
 #include <json/json.h>
 #include <json/value.h>
 #include <json/reader.h>
@@ -199,6 +200,78 @@ void FileWorker::RegisterHandlers()
 
 		if (task->_callback) {
 			task->_callback(result);
+		}
+	};
+
+	// 1037 聊天图片落盘：路径 static/<发送者uid>/<unique_name>（与 1031 头像同构，
+	// 下载时 1033 带 owner_uid=发送者 正好命中）。最后一块落盘后做两件事：
+	// 1. UpdateUploadStatus：图片消息入库时 status=0（资源未传完），这里置 2
+	// 2. 查收图人所在节点（Redis uip_<receiver>）→ gRPC NotifyChatImgMsg 让对方
+	//    ChatServer 推 1039 ——通知放在"文件传完后"是老师版的关键设计：
+	//    对方收到通知时图片已就绪，立即下载不会 404
+	_handlers[ID_IMG_CHAT_UPLOAD_REQ] = [this](std::shared_ptr<FileTask> task) {
+		// 解码
+		std::string decoded = base64_decode(task->_file_data);
+
+		auto file_path = ConfigMgr::Inst().GetFileOutPath();
+		auto file_path_str = (file_path / std::to_string(task->_uid) / task->_name).string();
+		auto last = task->_last;
+
+		boost::filesystem::path file_path_boost(file_path_str);
+		boost::filesystem::path dir_path = file_path_boost.parent_path();
+		Json::Value result;
+		result["error"] = ErrorCodes::Success;
+
+		//发送者 uid 子目录不存在则创建（该用户第一次发图时）
+		if (!boost::filesystem::exists(dir_path)) {
+			if (!boost::filesystem::create_directories(dir_path)) {
+				std::cerr << "Failed to create directory: " << dir_path.string() << std::endl;
+				result["error"] = ErrorCodes::FileWritePermissionFailed;
+				return;
+			}
+		}
+
+		std::ofstream outfile;
+		//第一个包：打开文件，如果存在则清空，不存在则创建
+		if (task->_seq == 1) {
+			outfile.open(file_path_str, std::ios::binary | std::ios::trunc);
+		}
+		else {
+			outfile.open(file_path_str, std::ios::binary | std::ios::app);
+		}
+
+		if (!outfile) {
+			std::cerr << "无法打开文件进行写入。" << std::endl;
+			result["error"] = ErrorCodes::FileWritePermissionFailed;
+			return;
+		}
+
+		outfile.write(decoded.data(), decoded.size());
+		if (!outfile) {
+			std::cerr << "写入文件失败。" << std::endl;
+			result["error"] = ErrorCodes::FileWritePermissionFailed;
+			return;
+		}
+
+		outfile.close();
+
+		if (last) {
+			std::cout << "聊天图片已成功保存为: " << file_path_str
+				<< " message_id=" << task->_chat_msg_id << std::endl;
+
+			//文件完整落盘：把图片消息状态置为已上传
+			MysqlMgr::GetInstance()->UpdateUploadStatus(task->_chat_msg_id);
+
+			//查收图人当前登录的节点名（登录时 Redis 写入），未登录就不用推通知
+			std::string uid_ip_value = "";
+			auto uid_ip_key = USERIPPREFIX + std::to_string(task->_receiver);
+			bool b_ip = RedisMgr::GetInstance()->Get(uid_ip_key, uid_ip_value);
+			if (!b_ip) {
+				return;
+			}
+
+			//gRPC 通知对方所在 ChatServer → 由它推 1039 给收图人客户端
+			ChatServerGrpcClient::GetInstance()->NotifyChatImgMsg(task->_chat_msg_id, uid_ip_value);
 		}
 	};
 }

@@ -307,6 +307,31 @@ std::shared_ptr<ChatThreadData> UserMgr::GetCurLoadData()
     return iter.value();
 }
 
+//==== 图片传输管理：登记/查询/移除传输中的图片消息 ====
+//发送方流程：选图后登记 → 1035 发出 → 1036 回包按名字取回发起 1037 → 传完移除
+//接收方流程：1039 通知时登记（占位）→ 1034 下载完成按名字取回刷新气泡 → 移除
+void UserMgr::AddTransFile(QString name, std::shared_ptr<MsgInfo> msg_info)
+{
+    std::lock_guard<std::mutex> lock(_mtx);
+    _trans_files.insert(name, msg_info);
+}
+
+std::shared_ptr<MsgInfo> UserMgr::GetTransFileByName(QString name)
+{
+    std::lock_guard<std::mutex> lock(_mtx);
+    auto iter = _trans_files.find(name);
+    if (iter == _trans_files.end()) {
+        return nullptr;
+    }
+    return iter.value();
+}
+
+void UserMgr::RmvTransFile(QString name)
+{
+    std::lock_guard<std::mutex> lock(_mtx);
+    _trans_files.remove(name);
+}
+
 //预加载推进到下一个会话；越界返回 nullptr 表示全部加载完
 std::shared_ptr<ChatThreadData> UserMgr::GetNextLoadData() {
     std::lock_guard<std::mutex> lock(_mtx);

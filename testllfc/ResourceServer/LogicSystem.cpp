@@ -305,6 +305,73 @@ void LogicWorker::RegisterCallBacks()
 			rtvalue["is_last"] = (current_pos >= total_size);
 			rtvalue["error"] = ErrorCodes::Success;
 	};
+
+	// 1037 上传聊天图片分块：客户端在 1035（图片消息入库拿到 message_id）之后
+	// 才开始传文件，请求字段比 1003 多 md5/message_id/sender/receiver。
+	// 时序（老师版 day39-40 设计）：文件全部落盘后才由 ResourceServer 通过 gRPC
+	// 通知对方所在 ChatServer 推 1039，保证对方收到通知时图片已可下载
+	_fun_callbacks[ID_IMG_CHAT_UPLOAD_REQ] = [this](shared_ptr<CSession> session, const short& msg_id,
+		const string& msg_data) {
+			Json::Reader reader;
+			Json::Value root;
+			reader.parse(msg_data, root);
+			auto md5 = root["md5"].asString();
+			auto seq = root["seq"].asInt();
+			auto name = root["name"].asString();
+			auto total_size = root["total_size"].asInt();
+			auto trans_size = root["trans_size"].asInt();
+			auto last = root["last"].asInt();
+			auto file_data = root["data"].asString();
+			auto uid = root["uid"].asInt();
+			auto token = root["token"].asString();
+			auto message_id = root["message_id"].asInt();
+			auto sender = root["sender"].asInt();
+			auto receiver = root["receiver"].asInt();
+
+			//与 1003 相同：解析完立即回 1038 进度回包，落盘在 FileWorker 异步完成
+			Json::Value  rtvalue;
+			Defer defer([this, &rtvalue, session]() {
+				std::string return_str = rtvalue.toStyledString();
+				session->Send(return_str, ID_IMG_CHAT_UPLOAD_RSP);
+				});
+
+			//首块校验登录态（与 1031 同款校验）
+			if (seq == 1) {
+				std::string token_key = USERTOKENPREFIX + std::to_string(uid);
+				std::string token_value = "";
+				bool success = RedisMgr::GetInstance()->Get(token_key, token_value);
+				if (!success) {
+					rtvalue["error"] = ErrorCodes::UidInvalid;
+					return;
+				}
+				if (token_value != token) {
+					rtvalue["error"] = ErrorCodes::TokenInvalid;
+					return;
+				}
+			}
+
+			//按文件名哈希选 FileWorker：同一图片的所有分块串行落盘（保证顺序）
+			std::hash<std::string> hash_fn;
+			size_t hash_value = hash_fn(name);
+			int index = hash_value % FILE_WORKER_COUNT;
+
+			auto task = std::make_shared<FileTask>(session, ID_IMG_CHAT_UPLOAD_REQ, name, seq,
+				total_size, trans_size, last, file_data, sender);
+			//1037 专属：消息 id（落盘完更新状态用）+ 收图人（查节点推通知用）
+			task->_chat_msg_id = message_id;
+			task->_receiver = receiver;
+			FileSystem::GetInstance()->PostMsgToQue(task, index);
+
+			rtvalue["error"] = ErrorCodes::Success;
+			rtvalue["total_size"] = total_size;
+			rtvalue["seq"] = seq;
+			rtvalue["name"] = name;
+			rtvalue["trans_size"] = trans_size;
+			rtvalue["last"] = last;
+			rtvalue["message_id"] = message_id;
+			rtvalue["sender"] = sender;
+			rtvalue["receiver"] = receiver;
+	};
 }
 
 LogicSystem::LogicSystem(){

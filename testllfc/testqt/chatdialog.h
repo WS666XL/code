@@ -89,6 +89,9 @@ public slots:
     void slot_item_clicked(QListWidgetItem *item);
     //对端发来的消息（1019 通知）：归档进会话缓存，当前会话的再追加气泡
     void slot_text_chat_msg(std::vector<std::shared_ptr<TextChatData>> msglists);
+    //day39：1036 自己发的图片入库回执（触发 1037 上传）/ 1039 收到对方图片消息
+    void slot_chat_img_rsp(int thread_id, std::shared_ptr<ImgChatData> chat_data);
+    void slot_img_chat_msg(std::shared_ptr<ImgChatData> imgchat);
     //1026 回包：建会话数据和列表条目，没拉完就继续发 1025，拉完开始加载消息
     void slot_load_chat_thread(bool load_more, int last_thread_id,
         std::vector<std::shared_ptr<ChatThreadInfo>> chat_threads);

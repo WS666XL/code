@@ -193,6 +193,40 @@ void FileTcpMgr::initHandlers()
         }
     });
 
+    // 1038 图片上传进度回包：{error, total_size, seq, name, trans_size, last,
+    // message_id, sender, receiver}，每块落盘后服务器回一条（与 1004 同构）。
+    // 最后一块回包到达只代表"文件已落盘"，DB 状态更新和对方通知在服务端
+    // FileWorker 线程里紧随其后异步完成
+    _handlers.insert(RES_ID_IMG_CHAT_UPLOAD_RSP, [this](quint16 id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+        if (jsonDoc.isNull()) {
+            qDebug() << "FileTcpMgr img chat upload rsp json parse failed";
+            return;
+        }
+        QJsonObject jsonObj = jsonDoc.object();
+        if (!jsonObj.contains("error")) {
+            qDebug() << "FileTcpMgr img chat upload rsp missing error field";
+            return;
+        }
+        int err = jsonObj["error"].toInt();
+        QString name = jsonObj["name"].toString();
+        if (err != ErrorCodes::SUCCESS) {
+            qDebug() << "FileTcpMgr img chat upload failed, err is" << err;
+            return;
+        }
+
+        int trans_size = jsonObj["trans_size"].toInt();
+        int total_size = jsonObj["total_size"].toInt();
+        emit sig_upload_progress(trans_size, total_size);
+        if (jsonObj["last"].toInt() == 1) {
+            qDebug() << "FileTcpMgr img chat upload done:" << name
+                     << "message_id" << jsonObj["message_id"].toInt();
+            //传输结束：从管理表移除（接收方的同名占位登记是独立的，不受影响）
+            UserMgr::GetInstance()->RmvTransFile(name);
+        }
+    });
+
     // 1034 下载回包：服务器按 (seq-1)*32KB 偏移读一块 base64 回来。
     // {error, data, seq, total_size, current_size, is_last, name, client_path}。
     // 客户端按 seq 覆盖/追加写本地文件；is_last=0 就带 seq+1 继续请求，
@@ -248,8 +282,8 @@ void FileTcpMgr::initHandlers()
             qDebug() << "FileTcpMgr download done:" << name
                      << "->" << ctx_iter->client_path;
             _downloading.remove(name);
-            // 本地文件已就绪：通知界面把还显示着默认头像的 label 重新加载
-            emit sig_avatar_downloaded(name);
+            // 本地文件已就绪：通知界面把还显示着占位图的头像/图片气泡重新加载
+            emit sig_file_downloaded(name);
         }
         else {
             // 非最后一块：seq+1 继续请求下一块
@@ -503,4 +537,98 @@ void FileTcpMgr::DownloadAvatar(const QString& iconFileName, int ownerUid)
     qDebug() << "FileTcpMgr DownloadAvatar start:" << iconFileName
              << "owner" << ownerUid;
     SendDownloadReq(iconFileName, ownerUid, client_path, 1);
+}
+
+// 下载聊天图片：图片在服务器按 <发送者uid>/<unique_name> 落盘，
+// 本地缓存到 AppData/<我的uid>/chatimg/<发送者uid>/<imgName>。
+// 与 DownloadAvatar 走同一条 1033 通道（owner_uid 不同目录就不同），互不影响
+void FileTcpMgr::DownloadChatImage(const QString& imgName, int senderUid)
+{
+    if (_socket.state() != QAbstractSocket::ConnectedState) {
+        qDebug() << "FileTcpMgr DownloadChatImage failed: resource server not connected";
+        return;
+    }
+    if (imgName.isEmpty() || _downloading.contains(imgName)) {
+        return;   //空名 / 已在下载中（多气泡同名图片只发一次请求）
+    }
+
+    QString storage_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QString img_dir = storage_dir + "/" + QString::number(UserMgr::GetInstance()->GetUid())
+                      + "/chatimg/" + QString::number(senderUid);
+    QDir dir(img_dir);
+    if (!dir.exists() && !dir.mkpath(".")) {
+        qDebug() << "FileTcpMgr DownloadChatImage mkpath failed:" << img_dir;
+        return;
+    }
+
+    DownloadCtx ctx;
+    ctx.owner_uid = senderUid;   //服务器按它拼 static/<uid>/<name> 定位图片
+    ctx.client_path = dir.filePath(imgName);
+    ctx.next_seq = 1;
+    _downloading.insert(imgName, ctx);
+
+    qDebug() << "FileTcpMgr DownloadChatImage start:" << imgName
+             << "sender" << senderUid;
+    SendDownloadReq(imgName, senderUid, ctx.client_path, 1);
+}
+
+// 上传聊天图片（1037）：发送方收到 1036（拿到 message_id）后调用。
+// 与 UploadHeadIcon 同构的"一口气分块"，但每块多带 message_id/sender/receiver：
+// 服务端最后一块落盘后要更新 chat_message 状态并 gRPC 通知对方
+bool FileTcpMgr::UploadChatImage(const QString& uniqueName)
+{
+    if (_socket.state() != QAbstractSocket::ConnectedState) {
+        qDebug() << "FileTcpMgr UploadChatImage failed: resource server not connected";
+        return false;
+    }
+
+    auto msg_info = UserMgr::GetInstance()->GetTransFileByName(uniqueName);
+    if (!msg_info) {
+        qDebug() << "FileTcpMgr UploadChatImage: trans file not found:" << uniqueName;
+        return false;
+    }
+    if (msg_info->_msg_id <= 0) {
+        qDebug() << "FileTcpMgr UploadChatImage: message_id not ready for" << uniqueName;
+        return false;
+    }
+
+    QFile file(msg_info->content);   //content 存的是本地路径
+    if (!file.open(QIODevice::ReadOnly)) {
+        qDebug() << "FileTcpMgr UploadChatImage could not open file:"
+                 << msg_info->content << file.errorString();
+        return false;
+    }
+
+    qint64 total_size = msg_info->_total_size;
+    qint64 last_seq = (total_size + MAX_FILE_LEN - 1) / MAX_FILE_LEN;
+
+    qint64 seq = 0;
+    while (!file.atEnd()) {
+        QByteArray buffer = file.read(MAX_FILE_LEN);
+        ++seq;
+
+        QJsonObject jsonObj;
+        jsonObj["md5"] = msg_info->_md5;
+        jsonObj["name"] = uniqueName;
+        jsonObj["seq"] = static_cast<int>(seq);
+        jsonObj["trans_size"] = static_cast<int>(buffer.size() + (seq - 1) * MAX_FILE_LEN);
+        jsonObj["total_size"] = static_cast<int>(total_size);
+        jsonObj["last"] = (seq == last_seq) ? 1 : 0;
+        jsonObj["data"] = QString::fromLatin1(buffer.toBase64());
+        //身份字段：首块校验 token；message_id/sender/receiver 供服务端
+        //落盘完成后更新消息状态并通知对方
+        jsonObj["token"] = UserMgr::GetInstance()->GetToken();
+        jsonObj["uid"] = UserMgr::GetInstance()->GetUid();
+        jsonObj["message_id"] = msg_info->_msg_id;
+        jsonObj["sender"] = msg_info->_sender;
+        jsonObj["receiver"] = msg_info->_receiver;
+
+        QJsonDocument doc(jsonObj);
+        sendMsg(RES_ID_IMG_CHAT_UPLOAD_REQ, doc.toJson(QJsonDocument::Compact));
+    }
+
+    file.close();
+    qDebug() << "FileTcpMgr UploadChatImage sent:" << uniqueName
+             << "total_size" << total_size << "blocks" << seq;
+    return true;
 }

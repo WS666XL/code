@@ -1,6 +1,8 @@
 ﻿#include "messagetextedit.h"
 #include <QDebug>
 #include <QMessageBox>
+#include <QUuid>
+#include <QCryptographicHash>
 
 
 MessageTextEdit::MessageTextEdit(QWidget *parent)
@@ -105,7 +107,12 @@ void MessageTextEdit::insertFileFromUrl(const QStringList &urls)
 
 void MessageTextEdit::insertImages(const QString &url)
 {
+    QFileInfo fileInfo(url);
     QImage image(url);
+    if (image.isNull()) {
+        qDebug() << "MessageTextEdit insertImages: cannot load image" << url;
+        return;
+    }
     //按比例缩放图片
     if(image.width()>120||image.height()>80)
     {
@@ -121,7 +128,26 @@ void MessageTextEdit::insertImages(const QString &url)
     // document->addResource(QTextDocument::ImageResource, QUrl(url), QVariant(image));
     cursor.insertImage(image,url);
 
-    insertMsgList(mMsgList,"image",url,QPixmap::fromImage(image));
+    //图片消息的三个服务端字段（day39）：
+    //md5=文件指纹（协议保留字段）；unique_name=uuid+原后缀（服务器落盘名，
+    //全局唯一所以不同用户的图片互不覆盖，下载/历史记录也靠它定位）；
+    //total_size=原始文件字节数（1035 请求带，气泡占位尺寸参考）
+    QCryptographicHash hash(QCryptographicHash::Md5);
+    QFile file(url);
+    if (file.open(QIODevice::ReadOnly)) {
+        hash.addData(&file);
+        file.close();
+    }
+
+    MsgInfo msg;
+    msg.msgFlag = "image";
+    msg.content = url;                       //本地路径：发送时 1037 按它读文件
+    msg.pixmap = QPixmap::fromImage(image);  //输入框预览 & 气泡缩略图
+    msg._md5 = hash.result().toHex();
+    msg._unique_name = QUuid::createUuid().toString(QUuid::WithoutBraces)
+                       + "." + fileInfo.suffix().toLower();
+    msg._total_size = fileInfo.size();
+    mMsgList.append(msg);
 }
 
 void MessageTextEdit::insertTextFile(const QString &url)

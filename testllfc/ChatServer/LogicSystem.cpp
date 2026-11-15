@@ -94,6 +94,8 @@ void LogicSystem::RegisterCallBacks() {
 		placeholders::_1, placeholders::_2, placeholders::_3);
 	_fun_callbacks[ID_LOAD_CHAT_MSG_REQ] = std::bind(&LogicSystem::LoadChatMsg, this,
 		placeholders::_1, placeholders::_2, placeholders::_3);
+	_fun_callbacks[ID_IMG_CHAT_MSG_REQ] = std::bind(&LogicSystem::DealChatImgMsg, this,
+		placeholders::_1, placeholders::_2, placeholders::_3);
 }
 bool LogicSystem::GetBaseInfo(std::string base_key, int uid, std::shared_ptr<UserInfo>& userinfo)
 {
@@ -887,5 +889,59 @@ void LogicSystem::DealChatTextMsg(std::shared_ptr<CSession> session, const short
 
 	//发送通知
 	ChatGrpcClient::GetInstance()->NotifyTextChatMsg(to_ip_value, text_msg_req, rtvalue);
+}
+
+// 1035 图片聊天消息：与文本消息"先入库再转发"不同，图片消息只入库+回包，
+// 不在这里通知对方——收图通知（1039）由资源服务器在图片文件全部落盘后
+// 通过 gRPC NotifyChatImgMsg 反向触发（老师版设计：保证对方收到通知时图片可下载）。
+// 入库 status=0（资源未传完），文件传完后由 ResourceServer 的 UpdateUploadStatus 置 2
+void LogicSystem::DealChatImgMsg(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data)
+{
+	Json::Reader reader;
+	Json::Value root;
+	reader.parse(msg_data, root);
+
+	auto uid = root["fromuid"].asInt();
+	auto touid = root["touid"].asInt();
+	auto thread_id = root["thread_id"].asInt();
+	auto md5 = root["md5"].asString();
+	auto unique_name = root["name"].asString();
+	auto unique_id = root["unique_id"].asString();
+
+	Json::Value rtvalue;
+	rtvalue["error"] = ErrorCodes::Success;
+	rtvalue["fromuid"] = uid;
+	rtvalue["touid"] = touid;
+	rtvalue["thread_id"] = thread_id;
+	rtvalue["md5"] = md5;
+	rtvalue["unique_name"] = unique_name;
+	rtvalue["unique_id"] = unique_id;
+
+	auto timestamp = getCurrentTimestamp();
+	rtvalue["chat_time"] = timestamp;
+
+	//入库：content 存图片的唯一文件名（下载时按它向资源服务器请求）
+	auto chat_msg = std::make_shared<ChatMessage>();
+	chat_msg->chat_time = timestamp;
+	chat_msg->sender_id = uid;
+	chat_msg->recv_id = touid;
+	chat_msg->unique_id = unique_id;
+	chat_msg->thread_id = thread_id;
+	chat_msg->content = unique_name;
+	chat_msg->status = 0;   //资源未上传完成
+	chat_msg->msg_type = int(ChatMsgType::PIC);
+
+	std::vector<std::shared_ptr<ChatMessage>> chat_datas;
+	chat_datas.push_back(chat_msg);
+	//插入数据库（回填自增 message_id，客户端拿到它才发 1037 传文件）
+	MysqlMgr::GetInstance()->AddChatMsg(chat_datas);
+
+	rtvalue["message_id"] = chat_msg->message_id;
+	rtvalue["status"] = chat_msg->status;
+
+	Defer defer([this, &rtvalue, session]() {
+		std::string return_str = rtvalue.toStyledString();
+		session->Send(return_str, ID_IMG_CHAT_MSG_RSP);
+		});
 }
 
