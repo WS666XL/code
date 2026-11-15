@@ -78,6 +78,7 @@ enum ChatUIMode{
     SearchMode,//搜索模式
     ChatMode,//聊天模式
     ContactMode,//联系模式
+    SettingsMode,//设置模式（day36：侧边栏"设置"进入用户信息页）
 };
 //自定义QListWidgetItem的几种类型
 enum ListItemType{
@@ -165,4 +166,12 @@ inline std::vector<QString> names = {
     "rust"
 };
 const int CHAT_COUNT_PER_PAGE=12;
+
+// ===== day31 文件传输相关宏（资源服务器专用，独立于上面的 ReqId 体系）=====
+//TCP文件上传包头长度（2B消息id + 4B包体长度）
+#define FILE_UPLOAD_HEAD_LEN 6
+#define FILE_UPLOAD_ID_LEN 2
+#define FILE_UPLOAD_LEN_LEN 4
+//最大文件长度（每块 32KB，base64 编码后约 44KB，资源服务器接受）
+#define MAX_FILE_LEN (1024*32)
 #endif // GLOBAL_H

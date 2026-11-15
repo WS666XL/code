@@ -10,10 +10,13 @@
 #include"tcpmgr.h"
 #include"usermgr.h"
 #include "conuseritem.h"
+#include "userinfopage.h"   // day36：用户信息页（设置入口）
 ChatDialog::ChatDialog(QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::ChatDialog),_mode(ChatUIMode::ChatMode),_state(ChatUIMode::ChatMode),_b_loading(false),
-    _cur_chat_thread_id(0),_last_widget(nullptr),_loading_dlg(nullptr),_cur_load_chat(nullptr)
+    _last_widget(nullptr),_cur_chat_thread_id(0),_loading_dlg(nullptr),_cur_load_chat(nullptr)
+    //初始化列表顺序必须与成员声明顺序一致（_last_widget 声明在 _cur_chat_thread_id 前），
+    //否则 -Wreorder 警告：实际初始化顺序以声明顺序为准，写错只是警告但容易埋坑
 {
     ui->setupUi(this);
     ui->add_btn->SetState("normal","hover","press");
@@ -75,6 +78,37 @@ ChatDialog::ChatDialog(QWidget *parent)
 
     connect(ui->side_chat_lb, &StateWidget::clicked, this, &ChatDialog::slot_side_chat);
     connect(ui->side_contact_lb, &StateWidget::clicked, this, &ChatDialog::slot_side_contact);
+
+    //day36：第三个侧边栏按钮"设置"（入口是用户信息页）。
+    //chatdialog.ui 不动，代码动态创建并插到 verticalLayout_3 末尾，
+    //即排在 side_head_lb / side_chat_lb / side_contact_lb 之后，与老师版顺序一致。
+    //尺寸对齐 .ui 里其他侧边栏图标的 30x30
+    _side_settings_lb = new StateWidget();
+    _side_settings_lb->setObjectName("side_settings_lb");   // QSS 按 objectName 匹配样式
+    _side_settings_lb->setMinimumSize(30, 30);
+    _side_settings_lb->setMaximumSize(30, 30);
+    ui->verticalLayout_3->addWidget(_side_settings_lb);
+    //状态字符串与老师版完全一致，六种状态对应 stylesheet.qss 里
+    //#side_settings_lb[state='xx'] 的六条 border-image 规则
+    _side_settings_lb->SetState("normal","hover","pressed","selected_normal","selected_hover","selected_pressed");
+    AddLBGroup(_side_settings_lb);
+    connect(_side_settings_lb, &StateWidget::clicked, this, &ChatDialog::slot_side_setting);
+
+    //day36：用户信息页挂进 stackedWidget（第四个页面：chat_page / friend_apply_page /
+    //friend_info_page / 用户信息页），保存指针供 slot_side_setting 切换
+    _user_info_page = new UserInfoPage(this);
+    ui->stackedWidget->addWidget(_user_info_page);
+    //头像保存成功 → 侧边栏头像跟着刷新（逻辑与构造函数里首次加载一致：
+    //从 UserMgr 取最新 _icon，用 LoadAvatarPixmap 走缓存重新设置）
+    connect(_user_info_page, &UserInfoPage::sig_reset_head, this, [this]() {
+        QString icon = ":/res/head_1.jpg";
+        if (auto self_info = UserMgr::GetInstance()->GetUserInfo()) {
+            if (!self_info->_icon.isEmpty()) {
+                icon = self_info->_icon;
+            }
+        }
+        ui->side_head_lb->setPixmap(LoadAvatarPixmap(icon, ui->side_head_lb->size()));
+    });
 
     //链接输入框的变化
     connect(ui->search_edit,&QLineEdit::textEdited,this,&ChatDialog::slot_text_changed);
@@ -333,6 +367,13 @@ void ChatDialog::ShowSearch(bool bsearch)
         ui->search_list->hide();
         ui->con_user_list->show();
         _mode = ChatUIMode::ContactMode;
+    }else if(_state == ChatUIMode::SettingsMode){
+        //day36：设置模式时中间列展示联系人列表（老师版同款处理），
+        //右侧 stackedWidget 由 slot_side_setting 切到用户信息页
+        ui->chat_user_list->hide();
+        ui->search_list->hide();
+        ui->con_user_list->show();
+        _mode = ChatUIMode::ContactMode;
     }
 }
 
@@ -394,6 +435,17 @@ void ChatDialog::slot_side_contact()
     ClearLabelState(ui->side_contact_lb);
     ui->stackedWidget->setCurrentWidget(ui->friend_apply_page);//还没写
     _state = ChatUIMode::ContactMode;
+    ShowSearch(false);
+}
+
+//day36：点"设置"图标，切到用户信息页（写法与 slot_side_chat/slot_side_contact 保持一致）
+void ChatDialog::slot_side_setting()
+{
+    qDebug()<< "receive side setting clicked";
+    //只取消其他图标的选中态，_side_settings_lb 自己进入选中样式
+    ClearLabelState(_side_settings_lb);
+    ui->stackedWidget->setCurrentWidget(_user_info_page);
+    _state = ChatUIMode::SettingsMode;
     ShowSearch(false);
 }
 
@@ -765,7 +817,8 @@ void ChatDialog::slot_load_chat_thread(bool load_more, int last_thread_id,
 }
 
 //1028 创建私聊回包：建会话+条目，插到列表最上面并跳转过去
-void ChatDialog::slot_create_private_chat(int uid, int other_id, int thread_id)
+void ChatDialog::slot_create_private_chat(int /*uid*/, int other_id, int thread_id)
+    //uid 本版用不到（回包按 other_id 建会话），形参留名会报 -Wunused-parameter
 {
     auto* chat_user_wid = new ChatUserWid();
     auto chat_thread_data = std::make_shared<ChatThreadData>(other_id, thread_id, 0);
@@ -794,8 +847,9 @@ void ChatDialog::slot_create_private_chat(int uid, int other_id, int thread_id)
 //1. 消息装进当前会话缓存并刷新"最后一条"游标；
 //2. load_more=true 继续翻当前会话的历史；
 //3. 当前会话加载完 → GetNextLoadData 走下一个会话；全部加载完关蒙层并选中第一项
-void ChatDialog::slot_load_chat_msg(int thread_id, int msg_id, bool load_more,
+void ChatDialog::slot_load_chat_msg(int /*thread_id*/, int msg_id, bool load_more,
     std::vector<std::shared_ptr<ChatDataBase>> msglists)
+    //thread_id 本版用不到（要加载的会话直接从 _cur_load_chat 拿），形参留名会报 -Wunused-parameter
 {
     _cur_load_chat->SetLastMsgId(msg_id);
     //装载历史消息（AppendMsg 顺带刷新会话的"最后一条消息"显示）

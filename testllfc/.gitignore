@@ -15,6 +15,10 @@ Makefile
 # ===== 可执行文件产物 =====
 bin/llfcchat
 
+# ===== testfile 联调 demo 产物 =====
+testfile/bin/
+testfile/*.pro.user
+
 # ===== Node 依赖 =====
 VarifyServer/node_modules/
 

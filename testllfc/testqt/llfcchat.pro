@@ -38,11 +38,13 @@ SOURCES += \
     customizeedit.cpp \
     findfaildlg.cpp \
     findsuccessdlg.cpp \
+    filetcpmgr.cpp \
     friendinfopage.cpp \
     friendlabel.cpp \
     global.cpp \
     grouptipitem.cpp \
     httpmgr.cpp \
+    imagecropperlabel.cpp \
     listitembase.cpp \
     loadingdlg.cpp \
     logindialog.cpp \
@@ -58,6 +60,7 @@ SOURCES += \
     textbubble.cpp \
     timerbtn.cpp \
     userdata.cpp \
+    userinfopage.cpp \
     usermgr.cpp
 
 # 参与编译的 .h 头文件
@@ -83,11 +86,14 @@ HEADERS += \
     customizeedit.h \
     findfaildlg.h \
     findsuccessdlg.h \
+    filetcpmgr.h \
     friendinfopage.h \
     friendlabel.h \
     global.h \
     grouptipitem.h \
     httpmgr.h \
+    imagecropperdialog.h \
+    imagecropperlabel.h \
     listitembase.h \
     loadingdlg.h \
     logindialog.h \
@@ -103,6 +109,7 @@ HEADERS += \
     textbubble.h \
     timerbtn.h \
     userdata.h \
+    userinfopage.h \
     usermgr.h
 
 # Qt Designer 拖出来的界面文件，编译时会自动生成 ui_xxx.h

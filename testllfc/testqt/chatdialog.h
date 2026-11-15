@@ -12,6 +12,7 @@ class ChatDialog;
 }
 
 class LoadingDlg;
+class UserInfoPage;   // day36：用户信息页（头像裁剪/本地保存），实现见 userinfopage.h
 
 /******************************************************************************
  *  文件：chatdialog.h
@@ -63,10 +64,17 @@ private:
     QTimer* _timer; // 心跳定时器：每 10s 发一次 ID_HEART_BEAT_REQ 保持链路活跃
     LoadingDlg* _loading_dlg;                    //全屏加载蒙层
     std::shared_ptr<ChatThreadData> _cur_load_chat;  //当前正在预加载历史消息的会话
+    //day36：设置入口和用户信息页。
+    //_side_settings_lb 不在 chatdialog.ui 里，构造函数里动态 new 出来
+    //插到 verticalLayout_3（side_head_lb/side_chat_lb/side_contact_lb 之后），
+    //不动 .ui 文件
+    StateWidget* _side_settings_lb;
+    UserInfoPage* _user_info_page;
 private slots:
     void slot_loading_chat_user();          // 列表滚到底触发：加载更多（新版会话列表由服务端下发，这里仅占位）
     void slot_side_chat();                  // 点"聊天"图标：切到聊天页
     void slot_side_contact();               // 点"联系人"图标：切到联系人页
+    void slot_side_setting();               // day36：点"设置"图标：切到用户信息页
     void slot_text_changed(const QString& str);  // 搜索框内容变化：非空就显示搜索结果列表
     void slot_loading_contact_user();
 

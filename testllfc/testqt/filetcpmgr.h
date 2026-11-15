@@ -1,0 +1,84 @@
+#ifndef FILETCPMGR_H
+#define FILETCPMGR_H
+
+#include <QTcpSocket>
+#include <QObject>
+#include <QMap>
+#include <QByteArray>
+#include <functional>
+#include "singleton.h"
+#include "global.h"
+
+/******************************************************************************
+ *  文件：filetcpmgr.h
+ *  作用：资源服务器（独立监听 127.0.0.1:9090）的长连接管理器，负责文件分块上传
+ *  协议：6 字节包头 = 2B 消息ID + 4B 包体长度（均大端），包体是 JSON 文本
+ *  与 TcpMgr 的区别：连的是另一台服务器、包头是 6 字节（TcpMgr 是 4 字节），
+ *                    所以独立成类，不复用 TcpMgr 的 socket 和解析逻辑
+ *  本轮简化：只做 day31 的基础分块上传 + 进度信号，不做断点续传/发送滑窗
+ *****************************************************************************/
+
+// ===== 资源服务器消息 ID（独立编号）=====
+// 为什么不放进 global.h 的 ReqId 枚举：ReqId 里 1001~1004 已被
+// 验证码/注册/重置密码/登录占用，两边是不同服务器、不同协议体系，
+// 老师正式版也是独立编号，这里用独立枚举避免撞号。
+enum ResReqId {
+    RES_ID_TEST_MSG_REQ = 1001,     //链路自测请求：发 {data:"hello"} 验证链路通不通
+    RES_ID_TEST_MSG_RSP = 1002,     //链路自测回包：服务器原样带回 data
+    RES_ID_UPLOAD_FILE_REQ = 1003,  //文件分块上传请求
+    RES_ID_UPLOAD_FILE_RSP = 1004,  //上传进度回执：每落盘一块服务器就回一条
+};
+
+// 包头长度宏以 global.h 为准；这里兜底 #ifndef 保护，
+// 防止某个翻译单元先包含本文件、后包含 global.h 时出现重复定义
+#ifndef FILE_UPLOAD_HEAD_LEN
+#define FILE_UPLOAD_HEAD_LEN 6
+#endif
+
+class FileTcpMgr : public QObject, public Singleton<FileTcpMgr>
+{
+    Q_OBJECT
+    friend class Singleton<FileTcpMgr>;   // 只允许单例模板创建对象
+public:
+    ~FileTcpMgr();
+    // 连接资源服务器（host 形如 "127.0.0.1"，资源服务器一般固定 9090）
+    void ConnectResServer(const QString& host, quint16 port);
+    // 上传本地文件：内部完成 md5 计算 + 按 MAX_FILE_LEN(32KB) 分块 + JSON 组包，
+    // 逐块经 sendMsg(1003) 发出；进度通过 sig_upload_progress / sig_upload_done 反馈
+    bool UploadFile(QString path);
+    // 对外发送入口：把 (消息ID, JSON包体) 经 sig_send_data 信号转给 slot_send_data 真正发出
+    void sendMsg(quint16 id, QByteArray body);
+
+private:
+    explicit FileTcpMgr(QObject* parent = nullptr);  // 私有构造：在 connect 好所有信号
+    void initHandlers();   // 注册"消息ID → 处理函数"的分发表
+    void handleMsg(quint16 id, int len, QByteArray data); // 按 id 查分发表再交给对应 lambda
+
+    QTcpSocket _socket;    // 独立于 TcpMgr 的套接字：专门连资源服务器
+    QString _host;         // 服务器地址
+    quint16 _port;         // 服务器端口
+    QByteArray _buffer;    // 接收缓冲区：解决 TCP 粘包/半包
+    bool _b_recv_pending;  // 标记：6B 包头已解析但包体没收全，等后续数据续上
+    quint16 _message_id;   // 当前这条消息的 ID（包头解析出来的）
+    quint32 _message_len;  // 当前这条消息体的长度。注意：协议里长度字段占 4 字节，
+                           // 必须按 quint32 解，按 quint16 读会把流解析错位
+    // 消息分发表：收到哪种 ID 就交给哪个函数处理。
+    // key 用 quint16 而不是 ReqId：资源服务器的 1001~1004 不属于 ReqId 体系
+    QMap<quint16, std::function<void(quint16 id, int len, QByteArray data)>> _handlers;
+
+public slots:
+    // 槽：真正组 6B 包头并写入 socket。外部一律走 sendMsg() 发信号过来
+    void slot_send_data(quint16 id, QByteArray body);
+
+signals:
+    void sig_res_connect(bool success);   // 资源服务器连接结果（true 成功 / false 失败）
+    // 请求发送：内部信号转槽（sig_send_data → slot_send_data）。
+    // 好处和 TcpMgr 一致：发送动作统一在 FileTcpMgr 所属线程排队执行，多线程安全
+    void sig_send_data(quint16 id, QByteArray body);
+    void sig_test_rsp(QString data);      // 1002 链路自测回包带回的 data（当前只打日志）
+    void sig_upload_progress(int trans_size, int total_size); // 每块落盘后的进度回执
+    void sig_upload_done(QString name);   // last==1：整份文件上传完成
+    void sig_connection_closed();         // 连接被服务器断开
+};
+
+#endif // FILETCPMGR_H
