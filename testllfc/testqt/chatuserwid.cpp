@@ -38,8 +38,10 @@ void ChatUserWid::SetChatData(std::shared_ptr<ChatThreadData> chat_data) {
         return;
     }
 
-    // 加载图片（走全局缓存，避免同一头像反复解码+缩放）
-    ui->icon_lb->setPixmap(LoadAvatarPixmap(other_info->_icon, ui->icon_lb->size()));
+    // 加载图片（走全局缓存；icon 是服务器文件名且本地没有时，会自动触发下载
+    // 并在下载完成后刷新本条目头像——带 label 重载的能力，owner_uid 传对方 uid）
+    ui->icon_lb->setPixmap(LoadAvatarPixmap(ui->icon_lb, other_info->_icon,
+        ui->icon_lb->size(), other_id));
     ui->icon_lb->setScaledContents(true);
 
     ui->user_name_lb->setText(other_info->_name);

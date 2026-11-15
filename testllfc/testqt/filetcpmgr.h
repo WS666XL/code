@@ -29,6 +29,8 @@ enum ResReqId {
     RES_ID_UPLOAD_FILE_RSP = 1004,  //上传进度回执：每落盘一块服务器就回一条
     RES_ID_UPLOAD_HEAD_ICON_REQ = 1031, //头像上传请求（老师消息 ID 1031：带 uid/token，服务端先校验再落盘）
     RES_ID_UPLOAD_HEAD_ICON_RSP = 1032, //头像上传回包：每块落盘后回一条；最后一块落盘+DB更新后才回
+    RES_ID_DOWNLOAD_FILE_REQ = 1033,    //文件下载请求（老师消息 ID 1033：按 owner_uid+name 定位，分块回 base64）
+    RES_ID_DOWNLOAD_FILE_RSP = 1034,    //文件下载回包：每块一条，is_last=1 表示收完
 };
 
 // 包头长度宏以 global.h 为准；这里兜底 #ifndef 保护，
@@ -53,6 +55,15 @@ public:
     // 服务端落盘到 output/static/<uid>/head.png 并更新 MySQL user.icon + Redis 缓存；
     // 每块落盘后服务器回 1032，最后一块处理完回的 1032 触发 sig_upload_head_done
     bool UploadHeadIcon(QString path);
+    // 下载头像（老师消息 1033 链路）：本地没有对方的头像文件时发起。
+    // iconFileName 是服务器文件名（如 head.png），ownerUid 是头像所有者的 uid；
+    // 文件保存到 AppData/<ownerUid>/avatars/<iconFileName>，下载完成后发
+    // sig_avatar_downloaded(iconFileName)（同一文件名同时只会发一个下载请求）
+    void DownloadAvatar(const QString& iconFileName, int ownerUid);
+    // 发一条 1033 下载请求（DownloadAvatar 首块和 1034 续块都走它）：
+    // 服务端按 output/static/<ownerUid>/<fileName> 定位文件，按 seq 偏移读分块回包
+    void SendDownloadReq(const QString& fileName, int ownerUid,
+                         const QString& clientPath, int seq);
     // 对外发送入口：把 (消息ID, JSON包体) 经 sig_send_data 信号转给 slot_send_data 真正发出
     void sendMsg(quint16 id, QByteArray body);
 
@@ -70,8 +81,17 @@ private:
     quint32 _message_len;  // 当前这条消息体的长度。注意：协议里长度字段占 4 字节，
                            // 必须按 quint32 解，按 quint16 读会把流解析错位
     // 消息分发表：收到哪种 ID 就交给哪个函数处理。
-    // key 用 quint16 而不是 ReqId：资源服务器的 1001~1004 不属于 ReqId 体系
+    // key 用 quint16 而不是 ReqId：资源服务器的 1001~1034 不属于 ReqId 体系
     QMap<quint16, std::function<void(quint16 id, int len, QByteArray data)>> _handlers;
+
+    // 下载中的文件上下文：文件名 → {ownerUid, 本地保存路径, 下一个要请求的 seq}
+    // 1034 回包驱动分块续发（is_last=0 时 seq+1 再发 1033），这些状态记在这里
+    struct DownloadCtx {
+        int owner_uid = 0;
+        QString client_path;
+        int next_seq = 1;
+    };
+    QHash<QString, DownloadCtx> _downloading;
 
 public slots:
     // 槽：真正组 6B 包头并写入 socket。外部一律走 sendMsg() 发信号过来
@@ -86,6 +106,7 @@ signals:
     void sig_upload_progress(int trans_size, int total_size); // 每块落盘后的进度回执
     void sig_upload_done(QString name);   // last==1：整份文件上传完成
     void sig_upload_head_done(QString name); // 头像上传完成：服务器已落盘+更新 DB/Redis 后回的 1032
+    void sig_avatar_downloaded(QString name); // 头像下载完成：本地文件已就绪，界面可重新加载显示
     void sig_connection_closed();         // 连接被服务器断开
 };
 

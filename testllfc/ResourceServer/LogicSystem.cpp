@@ -1,6 +1,9 @@
 #include "LogicSystem.h"
 #include "FileSystem.h"
 #include "RedisMgr.h"
+#include "ConfigMgr.h"
+#include "base64.h"
+#include <fstream>
 #include <json/json.h>
 #include <json/value.h>
 #include <json/reader.h>
@@ -210,6 +213,97 @@ void LogicWorker::RegisterCallBacks()
 				total_size, trans_size, last, file_data, uid);
 			task->_callback = callback;
 			FileSystem::GetInstance()->PostMsgToQue(task, index);
+	};
+
+	// 1033 下载文件（头像回显链路）：客户端本地没有对方的头像文件时发起。
+	// 请求 {name(文件名), seq, token, uid(请求者), owner_uid(文件所有者), client_path(客户端保存路径)}
+	// 回包 {error, data(base64分块), seq, total_size, current_size, is_last, name, client_path}
+	// 老师版把下载放 FileWorker 是为了配合 day38 断点续传（Redis 存 FileInfo 定位路径），
+	// 本版精简：请求直接带 owner_uid 拼路径，读文件是很快的同步 IO，LogicWorker 直接处理即可
+	_fun_callbacks[ID_DOWN_LOAD_FILE_REQ] = [this](shared_ptr<CSession> session, const short& msg_id,
+		const string& msg_data) {
+			Json::Reader reader;
+			Json::Value root;
+			reader.parse(msg_data, root);
+			auto name = root["name"].asString();
+			auto seq = root["seq"].asInt();
+			auto token = root["token"].asString();
+			auto uid = root["uid"].asInt();
+			auto owner_uid = root["owner_uid"].asInt();
+			auto client_path = root["client_path"].asString();
+
+			//回包公共字段用 Defer 兜底发送（handler 中途 return 也不会漏发）
+			Json::Value rtvalue;
+			rtvalue["name"] = name;
+			rtvalue["client_path"] = client_path;
+			rtvalue["seq"] = seq;
+			Defer defer([this, &rtvalue, session]() {
+				std::string return_str = rtvalue.toStyledString();
+				session->Send(return_str, ID_DOWN_LOAD_FILE_RSP);
+				});
+
+			//登录态校验：防止任何人凭文件名扫描下载他人文件
+			if (seq == 1) {
+				std::string token_key = USERTOKENPREFIX + std::to_string(uid);
+				std::string token_value = "";
+				bool success = RedisMgr::GetInstance()->Get(token_key, token_value);
+				if (!success) {
+					rtvalue["error"] = ErrorCodes::UidInvalid;
+					return;
+				}
+				if (token_value != token) {
+					rtvalue["error"] = ErrorCodes::TokenInvalid;
+					return;
+				}
+			}
+
+			//文件名安全校验：name 只应是纯文件名，带路径分隔符直接拒绝，
+			//防止 "../" 之类的目录穿越读任意文件
+			if (name.empty() || name.find('/') != std::string::npos
+				|| name.find("\\") != std::string::npos
+				|| name.find("..") != std::string::npos) {
+				rtvalue["error"] = ErrorCodes::FileNotExists;
+				return;
+			}
+
+			auto file_path = ConfigMgr::Inst().GetFileOutPath();
+			auto file_path_str = (file_path / std::to_string(owner_uid) / name).string();
+
+			std::ifstream infile(file_path_str, std::ios::binary);
+			if (!infile) {
+				std::cerr << "download file not exists: " << file_path_str << std::endl;
+				rtvalue["error"] = ErrorCodes::FileNotExists;
+				return;
+			}
+
+			//定位到 (seq-1)*FILE_CHUNK_LEN 偏移读一块——与上传的 32KB 分块对称
+			infile.seekg(0, std::ios::end);
+			std::streamsize total_size = infile.tellg();
+			std::streamsize offset = (std::streamsize)(seq - 1) * FILE_CHUNK_LEN;
+			if (offset >= total_size) {
+				rtvalue["error"] = ErrorCodes::FileNotExists;
+				return;
+			}
+			infile.seekg(offset);
+
+			char buffer[FILE_CHUNK_LEN];
+			infile.read(buffer, FILE_CHUNK_LEN);
+			std::streamsize bytes_read = infile.gcount();
+			infile.close();
+
+			if (bytes_read <= 0) {
+				rtvalue["error"] = ErrorCodes::FileReadFailed;
+				return;
+			}
+
+			//读出的分块 base64 编码后回给客户端
+			std::string data_to_encode(buffer, bytes_read);
+			rtvalue["data"] = base64_encode(data_to_encode);
+			std::streamsize current_pos = offset + bytes_read;
+			rtvalue["total_size"] = std::to_string(total_size);
+			rtvalue["current_size"] = std::to_string(current_pos);
+			rtvalue["is_last"] = (current_pos >= total_size);
+			rtvalue["error"] = ErrorCodes::Success;
 	};
 }
 

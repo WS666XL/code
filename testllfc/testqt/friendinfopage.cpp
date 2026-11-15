@@ -21,8 +21,9 @@ FriendInfoPage::~FriendInfoPage()
 void FriendInfoPage::SetInfo(std::shared_ptr<UserInfo> user_info)
 {
     _user_info = user_info;
-    // 加载图片（走全局缓存，避免同一头像反复解码+缩放）
-    ui->icon_lb->setPixmap(LoadAvatarPixmap(user_info->_icon, ui->icon_lb->size()));
+    // 加载图片（走全局缓存；本地缺文件自动下载并刷新，owner_uid 传对方 uid）
+    ui->icon_lb->setPixmap(LoadAvatarPixmap(ui->icon_lb, user_info->_icon,
+        ui->icon_lb->size(), user_info->_uid));
     ui->icon_lb->setScaledContents(true);
 
     ui->name_lb->setText(user_info->_name);

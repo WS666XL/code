@@ -33,8 +33,9 @@ FindSuccessDlg::~FindSuccessDlg()
 void FindSuccessDlg::SetSearchInfo(std::shared_ptr<SearchInfo> si)
 {
     ui->name_lb->setText(si->_name);
-    // 显示搜索到的用户头像（教程代码漏了这一步，head_lb 一直是空的）
-    ui->head_lb->setPixmap(LoadAvatarPixmap(si->_icon, ui->head_lb->size()));
+    // 显示搜索到的用户头像（走全局缓存；本地缺文件自动下载并刷新）
+    ui->head_lb->setPixmap(LoadAvatarPixmap(ui->head_lb, si->_icon,
+        ui->head_lb->size(), si->_uid));
     ui->head_lb->setScaledContents(true);
     _si = si;
 }

@@ -113,10 +113,9 @@ void UserInfoPage::InitUi()
     content_layout->addStretch();
 }
 
-// 按老师逻辑加载当前头像：
-// - ":/res/head_X.jpg" 是随包默认头像，直接当资源加载
-// - 其他值是本地已保存的头像文件，从 AppData/<uid>/avatars/ 目录读
-// 统一走 LoadAvatarPixmap（解码+缩放都有缓存），最后套圆形遮罩显示
+// 按统一入口解析当前头像（global.cpp 的 LoadAvatarPixmap 已兼容三种 icon 形态：
+// 默认资源路径 / 老数据编号 / 服务器文件名），失败时它内部会回退默认头像，
+// 文件名形态本地缺文件时还会自动触发下载并刷新 head_lb（换设备登录的场景）
 void UserInfoPage::LoadHeadFromLocal()
 {
     QString icon;
@@ -128,27 +127,8 @@ void UserInfoPage::LoadHeadFromLocal()
         icon = ":/res/head_1.jpg";
     }
 
-    // 用正则判断是不是默认头像（":/res/head_数字.jpg"）
-    QRegularExpression regex("^:/res/head_(\\d+)\\.jpg$");
-    QPixmap pixmap;
-    if (regex.match(icon).hasMatch()) {
-        // 默认头像：资源路径直接加载
-        pixmap = LoadAvatarPixmap(icon, head_lb->size());
-    }
-    else {
-        // 用户自己的头像：从 AppData/<uid>/avatars/ 读本地文件
-        QString storage_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-        auto uid = UserMgr::GetInstance()->GetUid();
-        QString avatar_path = storage_dir + "/" + QString::number(uid)
-                              + "/avatars/" + QFileInfo(icon).fileName();
-        pixmap = LoadAvatarPixmap(avatar_path, head_lb->size());
-        if (pixmap.isNull()) {
-            // 本地文件丢了（换机器/清缓存）就回退默认头像
-            qWarning() << "无法加载本地上传的头像：" << avatar_path;
-            pixmap = LoadAvatarPixmap(":/res/head_1.jpg", head_lb->size());
-        }
-    }
-
+    auto uid = UserMgr::GetInstance()->GetUid();
+    QPixmap pixmap = LoadAvatarPixmap(head_lb, icon, head_lb->size(), uid);
     head_lb->setPixmap(MakeRoundPixmap(pixmap));
     head_lb->setScaledContents(true);
 }

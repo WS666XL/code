@@ -4,6 +4,8 @@
 #include <QDataStream>
 #include <QFile>
 #include <QFileInfo>
+#include <QDir>
+#include <QStandardPaths>
 #include <QCryptographicHash>
 #include "usermgr.h"
 
@@ -188,6 +190,73 @@ void FileTcpMgr::initHandlers()
             qDebug() << "FileTcpMgr head icon upload done:" << name
                      << "total_size" << total_size;
             emit sig_upload_head_done(name);
+        }
+    });
+
+    // 1034 下载回包：服务器按 (seq-1)*32KB 偏移读一块 base64 回来。
+    // {error, data, seq, total_size, current_size, is_last, name, client_path}。
+    // 客户端按 seq 覆盖/追加写本地文件；is_last=0 就带 seq+1 继续请求，
+    // is_last=1 清掉下载上下文并发 sig_avatar_downloaded 通知界面刷新
+    _handlers.insert(RES_ID_DOWNLOAD_FILE_RSP, [this](quint16 id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+        if (jsonDoc.isNull()) {
+            qDebug() << "FileTcpMgr download rsp json parse failed";
+            return;
+        }
+        QJsonObject jsonObj = jsonDoc.object();
+        if (!jsonObj.contains("error")) {
+            qDebug() << "FileTcpMgr download rsp missing error field";
+            return;
+        }
+        int err = jsonObj["error"].toInt();
+        QString name = jsonObj["name"].toString();
+        if (err != ErrorCodes::SUCCESS) {
+            // 常见错误：1012 文件不存在（对方从未上传过头像，icon 还是默认编号
+            // 时不会走到下载，所以一般是异常数据）、1010/1011 登录态失效
+            qDebug() << "FileTcpMgr download failed, err is" << err << "name is" << name;
+            _downloading.remove(name);
+            return;
+        }
+
+        auto ctx_iter = _downloading.find(name);
+        if (ctx_iter == _downloading.end()) {
+            qDebug() << "FileTcpMgr download rsp for unknown file:" << name;
+            return;
+        }
+
+        int seq = jsonObj["seq"].toInt();
+        bool is_last = jsonObj["is_last"].toBool();
+        QByteArray decoded = QByteArray::fromBase64(
+            jsonObj["data"].toString().toUtf8());
+
+        // seq==1 覆盖写（新文件），后续块追加——与上传的落盘规则对称
+        QFile file(ctx_iter->client_path);
+        QIODevice::OpenMode mode = (seq == 1)
+            ? QIODevice::WriteOnly
+            : (QIODevice::WriteOnly | QIODevice::Append);
+        if (!file.open(mode)) {
+            qDebug() << "FileTcpMgr download open file failed:" << ctx_iter->client_path
+                     << file.errorString();
+            _downloading.remove(name);
+            return;
+        }
+        file.write(decoded);
+        file.close();
+
+        if (is_last) {
+            qDebug() << "FileTcpMgr download done:" << name
+                     << "->" << ctx_iter->client_path;
+            _downloading.remove(name);
+            // 本地文件已就绪：通知界面把还显示着默认头像的 label 重新加载
+            emit sig_avatar_downloaded(name);
+        }
+        else {
+            // 非最后一块：seq+1 继续请求下一块
+            int next_seq = ctx_iter->next_seq + 1;
+            ctx_iter->next_seq = next_seq;
+            SendDownloadReq(name, ctx_iter->owner_uid,
+                            ctx_iter->client_path, next_seq);
         }
     });
 }
@@ -383,4 +452,55 @@ bool FileTcpMgr::UploadHeadIcon(QString path)
     qDebug() << "FileTcpMgr UploadHeadIcon sent:" << fileName
              << "total_size" << total_size << "blocks" << seq;
     return true;
+}
+
+// 发一条 1033 下载请求：字段与老师版对齐（name/seq/token/uid/client_path），
+// 多带 owner_uid（老师版靠 Redis 里的 FileInfo 定位路径，本版精简为直接带所有者 uid）
+void FileTcpMgr::SendDownloadReq(const QString& fileName, int ownerUid,
+                                 const QString& clientPath, int seq)
+{
+    QJsonObject jsonObj;
+    jsonObj["name"] = fileName;
+    jsonObj["seq"] = seq;
+    jsonObj["token"] = UserMgr::GetInstance()->GetToken();
+    jsonObj["uid"] = UserMgr::GetInstance()->GetUid();
+    jsonObj["owner_uid"] = ownerUid;
+    jsonObj["client_path"] = clientPath;
+    QJsonDocument doc(jsonObj);
+    sendMsg(RES_ID_DOWNLOAD_FILE_REQ, doc.toJson(QJsonDocument::Compact));
+}
+
+// 下载头像入口：本地加载失败时由 LoadAvatarPixmap 触发（见 global.cpp）。
+// 去重：同一文件名已在下载中就不再发请求（一个会话列表里同一个头像
+// 可能被多个条目触发多次，重复下载会互相覆盖写文件）
+void FileTcpMgr::DownloadAvatar(const QString& iconFileName, int ownerUid)
+{
+    if (_socket.state() != QAbstractSocket::ConnectedState) {
+        qDebug() << "FileTcpMgr DownloadAvatar failed: resource server not connected";
+        return;
+    }
+    if (iconFileName.isEmpty() || _downloading.contains(iconFileName)) {
+        return;
+    }
+
+    // 保存路径与"自己头像"的存储规则一致：AppData/<所有者uid>/avatars/<文件名>，
+    // 这样下次加载时 LoadAvatarPixmap 拼同样的路径就能直接命中本地文件
+    QString storage_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QString avatar_dir = storage_dir + "/" + QString::number(ownerUid) + "/avatars";
+    QDir dir(avatar_dir);
+    if (!dir.exists() && !dir.mkpath(".")) {
+        qDebug() << "FileTcpMgr DownloadAvatar mkpath failed:" << avatar_dir;
+        return;
+    }
+    QString client_path = dir.filePath(iconFileName);
+
+    DownloadCtx ctx;
+    ctx.owner_uid = ownerUid;
+    ctx.client_path = client_path;
+    ctx.next_seq = 1;
+    _downloading.insert(iconFileName, ctx);
+
+    qDebug() << "FileTcpMgr DownloadAvatar start:" << iconFileName
+             << "owner" << ownerUid;
+    SendDownloadReq(iconFileName, ownerUid, client_path, 1);
 }

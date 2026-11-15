@@ -23,8 +23,9 @@ ApplyFriendItem::~ApplyFriendItem()
 void ApplyFriendItem::SetInfo(std::shared_ptr<ApplyInfo> apply_info)
 {
     _apply_info = apply_info;
-    // 加载图片（走全局缓存，避免同一头像反复解码+缩放）
-    ui->icon_lb->setPixmap(LoadAvatarPixmap(_apply_info->_icon, ui->icon_lb->size()));
+    // 加载图片（走全局缓存；本地缺文件自动下载并刷新，owner_uid 传申请者 uid）
+    ui->icon_lb->setPixmap(LoadAvatarPixmap(ui->icon_lb, _apply_info->_icon,
+        ui->icon_lb->size(), _apply_info->_uid));
     ui->icon_lb->setScaledContents(true);
 
     ui->user_name_lb->setText(_apply_info->_name);

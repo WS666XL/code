@@ -64,7 +64,8 @@ ChatDialog::ChatDialog(QWidget *parent)
             self_icon = self_info->_icon;
         }
     }
-    ui->side_head_lb->setPixmap(LoadAvatarPixmap(self_icon, ui->side_head_lb->size()));
+    ui->side_head_lb->setPixmap(LoadAvatarPixmap(ui->side_head_lb, self_icon,
+        ui->side_head_lb->size()));
     ui->side_head_lb->setScaledContents(true);
 
     ui->side_chat_lb->setProperty("state","normal");
@@ -107,7 +108,8 @@ ChatDialog::ChatDialog(QWidget *parent)
                 icon = self_info->_icon;
             }
         }
-        ui->side_head_lb->setPixmap(LoadAvatarPixmap(icon, ui->side_head_lb->size()));
+        ui->side_head_lb->setPixmap(LoadAvatarPixmap(ui->side_head_lb, icon,
+            ui->side_head_lb->size()));
     });
 
     //链接输入框的变化

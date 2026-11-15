@@ -70,8 +70,9 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
         ChatItemBase* pChatItem = new ChatItemBase(role);
 
         pChatItem->setUserName(self_info->_name);
-        //头像走全局缓存加载（避免重复解码）
-        pChatItem->setUserIcon(LoadAvatarPixmap(self_info->_icon, QSize(42,42)));
+        //头像走全局缓存加载（避免重复解码）；气泡 item 不参与下载回显的自动刷新，
+        //本地缺文件时后台下载，重开会话时自然显示
+        pChatItem->setUserIcon(LoadAvatarPixmap(self_info->_icon, QSize(42,42), self_info->_uid));
         QWidget* pBubble = nullptr;
         //本轮只画文本气泡；图片等类型后续再加分支
         if (msg->GetMsgType() == ChatMsgType::TEXT) {
@@ -99,7 +100,7 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
             return;
         }
         pChatItem->setUserName(friend_info->_name);
-        pChatItem->setUserIcon(LoadAvatarPixmap(friend_info->_icon, QSize(42,42)));
+        pChatItem->setUserIcon(LoadAvatarPixmap(friend_info->_icon, QSize(42,42), friend_info->_uid));
         QWidget* pBubble = nullptr;
         if (msg->GetMsgType() == ChatMsgType::TEXT) {
             pBubble = new TextBubble(role, msg->GetMsgContent());
@@ -174,7 +175,7 @@ void ChatPage::on_send_btn_clicked()
 
         ChatItemBase *pChatItem = new ChatItemBase(role);
         pChatItem->setUserName(userName);
-        pChatItem->setUserIcon(LoadAvatarPixmap(user_info->_icon, QSize(42,42)));
+        pChatItem->setUserIcon(LoadAvatarPixmap(user_info->_icon, QSize(42,42), user_info->_uid));
         QWidget *pBubble = nullptr;
 
         //生成唯一id：本地标识这条消息，1018 回执按它配对

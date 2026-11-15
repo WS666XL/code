@@ -15,8 +15,18 @@
 // 必须 unpolish(取消)+polish(重新应用) 一次，控件才会按新属性重绘。
 extern std::function<void(QWidget*)>repolish;
 extern std::function<QString(QString)>xorString;
-// 头像统一加载入口：原图只解码一次并缓存，再缩放到目标尺寸（见 global.cpp）
-QPixmap LoadAvatarPixmap(const QString& path, const QSize& size);
+// 头像统一加载入口（原图解码+缩放双层缓存，见 global.cpp）。
+// icon 支持三种形态，按优先级解析：
+//   1. ":/res/head_X.jpg" —— 随包默认头像资源路径
+//   2. 纯数字（如 "1"）   —— 老数据默认头像编号，转成形态 1
+//   3. 服务器文件名（如 "head.png"）—— 从 AppData/<ownerUid>/avatars/ 读本地文件，
+//      本地没有时自动发 1033 下载（带 ownerUid 防同名冲突），下载完成自动刷新 label
+// ownerUid 是头像所有者的 uid；不传（0）时默认用当前登录 uid（自己的头像）
+QPixmap LoadAvatarPixmap(const QString& icon, const QSize& size, int owner_uid = 0);
+// 带 label 的重载：本地缺文件触发下载后，下载完成会自动把新头像 set 回该 label
+//（label 用 QPointer 弱引用跟踪，item 销毁后自动失效，不会悬空访问）
+class QLabel;   // 前向声明：引用参数不需要完整定义，避免在所有翻译单元里拖入 QLabel 头
+QPixmap LoadAvatarPixmap(QLabel* label, const QString& icon, const QSize& size, int owner_uid = 0);
 // 请求 ID：标识"这是哪一次操作"，服务器返回时靠它找到对应的处理逻辑
 enum ReqId{
     ID_GET_VARIFY_CODE = 1001, //获取验证码
