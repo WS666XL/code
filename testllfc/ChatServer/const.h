@@ -23,6 +23,7 @@ enum ErrorCodes {
 enum class ChatMsgType {
 	TEXT = 0,  //文本消息
 	PIC = 1,   //图片消息
+	FILE = 3,  //文件消息（与客户端 ChatMsgType::FILE 同号；day41 文件聊天复用图片的传输链路）
 };
 
 

@@ -907,6 +907,13 @@ void LogicSystem::DealChatImgMsg(std::shared_ptr<CSession> session, const short&
 	auto md5 = root["md5"].asString();
 	auto unique_name = root["name"].asString();
 	auto unique_id = root["unique_id"].asString();
+	auto original_name = root["file_name"].asString();   //原始文件名（文件消息才有）
+	//消息类型（1=图片 3=文件）：图片与文件共用 1035/1037/1039 这套链路，
+	//服务端只按类型入库，落盘/通知逻辑完全复用
+	auto msg_type = root["msg_type"].asInt();
+	if (msg_type != int(ChatMsgType::PIC) && msg_type != int(ChatMsgType::FILE)) {
+		msg_type = int(ChatMsgType::PIC);   //非法值兜底为图片
+	}
 
 	Json::Value rtvalue;
 	rtvalue["error"] = ErrorCodes::Success;
@@ -920,16 +927,22 @@ void LogicSystem::DealChatImgMsg(std::shared_ptr<CSession> session, const short&
 	auto timestamp = getCurrentTimestamp();
 	rtvalue["chat_time"] = timestamp;
 
-	//入库：content 存图片的唯一文件名（下载时按它向资源服务器请求）
+	//入库：图片消息 content=唯一文件名；文件消息 content="唯一文件名|原始文件名"
+	//（| 分隔——unique_name 是 uuid 不含 |；下游通知/历史加载统一拆分）
+	auto content = unique_name;
+	if (msg_type == int(ChatMsgType::FILE) && !original_name.empty()) {
+		content = unique_name + "|" + original_name;
+	}
+
 	auto chat_msg = std::make_shared<ChatMessage>();
 	chat_msg->chat_time = timestamp;
 	chat_msg->sender_id = uid;
 	chat_msg->recv_id = touid;
 	chat_msg->unique_id = unique_id;
 	chat_msg->thread_id = thread_id;
-	chat_msg->content = unique_name;
+	chat_msg->content = content;
 	chat_msg->status = 0;   //资源未上传完成
-	chat_msg->msg_type = int(ChatMsgType::PIC);
+	chat_msg->msg_type = msg_type;
 
 	std::vector<std::shared_ptr<ChatMessage>> chat_datas;
 	chat_datas.push_back(chat_msg);

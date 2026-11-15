@@ -49,9 +49,12 @@ private:
     QHash<QString, ChatItemBase*> _unrsp_item_map;
     //管理已回执的消息气泡：key 是服务端 msg_id（以后做图片进度更新用得上）
     QHash<int, ChatItemBase*> _base_item_map;
-    //本会话里"本地缺图、等待下载"的图片气泡：key 是图片唯一文件名。
-    //1033 下载完成（sig_file_downloaded）后按名字找到气泡把占位图换成真图
-    QHash<QString, class PictureBubble*> _img_bubble_map;
+    //本会话里"本地缺文件、等待下载"的气泡：key 是唯一文件名，value 是下载完成后
+    //的刷新回调（图片气泡换真图 / 文件卡片切"点击打开"状态）。day41 改为回调式：
+    //图片气泡和文件气泡类型不同，各自捕获自己刷新方法的 lambda，chatpage 不感知类型
+    QHash<QString, std::function<void()>> _download_done_map;
+    //下载失败的清理回调：key 是唯一文件名（值通常是空操作或恢复失败态）
+    QHash<QString, std::function<void()>> _download_fail_map;
 };
 
 #endif // CHATPAGE_H

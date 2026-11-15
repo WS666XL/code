@@ -8,6 +8,7 @@
 #include"chatitembase.h"
 #include"textbubble.h"
 #include"picturebubble.h"
+#include"filebubble.h"
 #include"filetcpmgr.h"
 #include"usermgr.h"
 #include"tcpmgr.h"
@@ -29,29 +30,28 @@ ChatPage::ChatPage(QWidget *parent)
     ui->emo_lb->SetState("normal","hover","press","normal","hover","press");
     ui->file_lb->SetState("normal","hover","press","normal","hover","press");
 
-    //图片下载完成：按唯一文件名找到等待中的气泡，把灰色占位换成真图
+    //下载完成：执行该文件名对应的刷新回调（图片气泡换真图 / 文件卡片切"点击打开"）
     connect(FileTcpMgr::GetInstance().get(), &FileTcpMgr::sig_file_downloaded,
         this, [this](const QString& name) {
-            auto iter = _img_bubble_map.find(name);
-            if (iter == _img_bubble_map.end()) {
+            auto iter = _download_done_map.find(name);
+            if (iter == _download_done_map.end()) {
                 return;
             }
-            auto msg_info = UserMgr::GetInstance()->GetTransFileByName(name);
-            QString local_path;
-            if (msg_info && !msg_info->content.isEmpty() && QFileInfo::exists(msg_info->content)) {
-                local_path = msg_info->content;
+            iter.value()();
+            _download_done_map.erase(iter);
+            _download_fail_map.remove(name);
+        });
+
+    //下载失败：执行失败回调（文件卡片恢复"点击下载"可重试；图片气泡保持占位）
+    connect(FileTcpMgr::GetInstance().get(), &FileTcpMgr::sig_download_failed,
+        this, [this](const QString& name) {
+            auto iter = _download_fail_map.find(name);
+            if (iter == _download_fail_map.end()) {
+                return;
             }
-            else {
-                //登记信息已被清理（传输表只有一份），直接按缓存目录找
-                QString storage_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-                local_path = storage_dir + "/" + QString::number(UserMgr::GetInstance()->GetUid())
-                             + "/chatimg/" + QString::number(msg_info ? msg_info->_sender : 0)
-                             + "/" + name;
-            }
-            if (QFileInfo::exists(local_path)) {
-                iter.value()->setPicture(QPixmap(local_path));
-            }
-            _img_bubble_map.erase(iter);
+            iter.value()();
+            _download_fail_map.erase(iter);
+            _download_done_map.remove(name);
         });
 }
 
@@ -94,11 +94,12 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
 {
     auto self_info = UserMgr::GetInstance()->GetUserInfo();
 
-    // ===== day39 图片消息气泡 =====
-    // 自己发的图：MsgInfo.content 是本地路径（本地必有，直接显示）
-    // 对方发的图 / 历史记录里的图：查本地缓存 AppData/<我的uid>/chatimg/<发送者>/<name>，
-    // 没有就显示灰色占位图 + 后台发 1033 下载，下载完成按 _img_bubble_map 刷新
-    if (msg->GetMsgType() == ChatMsgType::PIC) {
+    // ===== day39 图片 / day41 文件消息气泡（共用 1035-1039 链路）=====
+    // 自己发的：MsgInfo.content 是本地路径（本地必有，直接显示）
+    // 对方发的 / 历史记录里的：查本地缓存（图片 chatimg / 文件 chatfile），
+    // 没有就显示占位（图片灰块 / 文件卡片"点击下载"）+ 后台 1033 下载，
+    // 下载完成按 _download_done_map 里的回调刷新对应气泡
+    if (msg->GetMsgType() == ChatMsgType::PIC || msg->GetMsgType() == ChatMsgType::FILE) {
         auto img_data = std::dynamic_pointer_cast<ImgChatData>(msg);
         if (!img_data || !img_data->_msg_info) {
             return;
@@ -106,14 +107,16 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
         auto msg_info = img_data->_msg_info;
         auto sender_uid = msg->GetSendUid();
         bool is_self = (sender_uid == self_info->_uid);
+        bool is_file = (msg->GetMsgType() == ChatMsgType::FILE);
         ChatRole role = is_self ? ChatRole::Self : ChatRole::Other;
 
-        //解析图片的本地路径：发送方是原始路径；接收方查 chatimg 缓存目录
+        //解析本地路径：发送方是原始路径；接收方查缓存目录（图片/文件各一个）
+        QString cache_subdir = is_file ? "chatfile" : "chatimg";
         QString local_path = msg_info->content;
         if (local_path.isEmpty() || !QFileInfo::exists(local_path)) {
             QString storage_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
             local_path = storage_dir + "/" + QString::number(self_info->_uid)
-                         + "/chatimg/" + QString::number(sender_uid)
+                         + "/" + cache_subdir + "/" + QString::number(sender_uid)
                          + "/" + msg_info->_unique_name;
             if (QFileInfo::exists(local_path)) {
                 //缓存命中：记进 MsgInfo，下次重画直接走本地路径
@@ -121,18 +124,7 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
             }
         }
 
-        QPixmap pic;
         bool need_download = false;
-        if (!local_path.isEmpty() && QFileInfo::exists(local_path)) {
-            pic = QPixmap(local_path);
-        }
-        else {
-            //灰色占位图（下载完成后按 unique_name 找到这个气泡替换成真图）
-            pic = QPixmap(160, 90);
-            pic.fill(QColor(235, 235, 235));
-            need_download = true;
-        }
-
         ChatItemBase* pChatItem = new ChatItemBase(role);
         if (is_self) {
             pChatItem->setUserName(self_info->_name);
@@ -151,18 +143,84 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
             }
         }
 
-        auto* pic_bubble = new PictureBubble(pic, role);
-        pChatItem->setWidget(pic_bubble);
+        if (is_file) {
+            //文件卡片：显示原始文件名+大小；本地有文件时点击直接打开
+            auto* file_bubble = new FileBubble(
+                msg_info->_file_name.isEmpty() ? msg_info->_unique_name : msg_info->_file_name,
+                msg_info->_total_size, role);
+            if (!local_path.isEmpty() && QFileInfo::exists(local_path)) {
+                file_bubble->setLocalPath(local_path);
+            }
+            else {
+                need_download = true;
+                //点击 → 发起 1033 下载（chatfile 目录）+ 登记成功/失败回调
+                connect(file_bubble, &FileBubble::sig_card_clicked, this,
+                    [this, file_bubble, msg_info, sender_uid]() {
+                        _download_done_map[msg_info->_unique_name] = [file_bubble, msg_info, sender_uid]() {
+                            QString storage_dir = QStandardPaths::writableLocation(
+                                QStandardPaths::AppDataLocation);
+                            QString local_path = storage_dir + "/"
+                                + QString::number(UserMgr::GetInstance()->GetUid())
+                                + "/chatfile/" + QString::number(sender_uid)
+                                + "/" + msg_info->_unique_name;
+                            if (QFileInfo::exists(local_path)) {
+                                file_bubble->setLocalPath(local_path);
+                            }
+                            else {
+                                file_bubble->setDownloadFailed();
+                            }
+                        };
+                        _download_fail_map[msg_info->_unique_name] = [file_bubble]() {
+                            file_bubble->setDownloadFailed();
+                        };
+                        file_bubble->setDownloading();
+                        FileTcpMgr::GetInstance()->DownloadChatFile(
+                            msg_info->_unique_name, sender_uid);
+                    });
+            }
+            pChatItem->setWidget(file_bubble);
+        }
+        else {
+            //图片气泡：本地有图直接显示；没有则灰色占位 + 后台下载
+            QPixmap pic;
+            if (!local_path.isEmpty() && QFileInfo::exists(local_path)) {
+                pic = QPixmap(local_path);
+            }
+            else {
+                pic = QPixmap(160, 90);
+                pic.fill(QColor(235, 235, 235));
+                need_download = true;
+            }
+            auto* pic_bubble = new PictureBubble(pic, role);
+            pChatItem->setWidget(pic_bubble);
+            if (need_download) {
+                _download_done_map[msg_info->_unique_name] = [pic_bubble, msg_info, sender_uid]() {
+                    QString storage_dir = QStandardPaths::writableLocation(
+                        QStandardPaths::AppDataLocation);
+                    QString local_path = storage_dir + "/"
+                        + QString::number(UserMgr::GetInstance()->GetUid())
+                        + "/chatimg/" + QString::number(sender_uid)
+                        + "/" + msg_info->_unique_name;
+                    if (QFileInfo::exists(local_path)) {
+                        pic_bubble->setPicture(QPixmap(local_path));
+                    }
+                };
+                FileTcpMgr::GetInstance()->DownloadChatImage(
+                    msg_info->_unique_name, sender_uid);
+            }
+        }
+
         pChatItem->setStatus(msg->GetStatus());
         ui->chat_data_list->appendChatItem(pChatItem);
 
-        if (need_download) {
-            //登记气泡并后台下载（DownloadChatImage 内部有同名去重，多气泡不重复请求）
-            _img_bubble_map[msg_info->_unique_name] = pic_bubble;
-            FileTcpMgr::GetInstance()->DownloadChatImage(msg_info->_unique_name, sender_uid);
-        }
-        else if (rsp) {
-            _base_item_map[msg->GetMsgId()] = pChatItem;
+        //本地已就绪的（发送方 / 缓存命中）：按回执状态挂气泡索引
+        if (!need_download) {
+            if (rsp) {
+                _base_item_map[msg->GetMsgId()] = pChatItem;
+            }
+            else {
+                _unrsp_item_map[msg->GetUniqueId()] = pChatItem;
+            }
         }
         return;
     }
@@ -287,13 +345,15 @@ void ChatPage::on_send_btn_clicked()
             continue;
         }
 
-        // ===== day39 图片消息分支 =====
+        // ===== day39 图片 / day41 文件消息分支（共用 1035-1039 链路）=====
         // 时序（老师版设计）：先发 1035 让服务端入库拿 message_id，
-        // 气泡立即显示本地缩略图；收到 1036 回包后才发起 1037 文件上传，
+        // 气泡立即显示本地内容；收到 1036 回包后才发起 1037 文件上传，
         // 文件全部落盘后由资源服务器通知对方
-        if(type == "image")
+        if(type == "image" || type == "file")
         {
-            //先把之前攒着的文本发出去（文本与图片交替时保证顺序）
+            bool is_file = (type == "file");
+
+            //先把之前攒着的文本发出去（文本与图片/文件交替时保证顺序）
             if (txt_size) {
                 textObj["text_array"] = textArray;
                 textObj["fromuid"] = user_info->_uid;
@@ -310,24 +370,31 @@ void ChatPage::on_send_btn_clicked()
             auto msg_info = std::make_shared<MsgInfo>(msgList[i]);
             auto uuidString = QUuid::createUuid().toString();
 
-            //本地缩略图气泡（立即显示，状态图标等 1036 回执）
+            //气泡立即显示本地内容：图片=缩略图 / 文件=文件卡片
             ChatItemBase *pChatItem = new ChatItemBase(role);
             pChatItem->setUserName(userName);
             pChatItem->setUserIcon(LoadAvatarPixmap(user_info->_icon, QSize(42,42), user_info->_uid));
-            pChatItem->setWidget(new PictureBubble(msgList[i].pixmap, role));
+            if (is_file) {
+                pChatItem->setWidget(new FileBubble(msg_info->_file_name,
+                    msg_info->_total_size, role));
+            }
+            else {
+                pChatItem->setWidget(new PictureBubble(msgList[i].pixmap, role));
+            }
             pChatItem->setStatus(0);
             ui->chat_data_list->appendChatItem(pChatItem);
 
             //挂到"未回执"表：1036 回包按 unique_id 找到它改状态；
             //消息数据同时进会话缓存（未回执区），等回包 MoveMsg 归档
+            auto msg_type = is_file ? ChatMsgType::FILE : ChatMsgType::PIC;
             auto img_msg = std::make_shared<ImgChatData>(msg_info, uuidString, thread_id,
-                ChatFormType::PRIVATE, ChatMsgType::PIC, user_info->_uid, 0);
+                ChatFormType::PRIVATE, msg_type, user_info->_uid, 0);
             _chat_data->AppendUnRspMsg(uuidString, img_msg);
             _unrsp_item_map[uuidString] = pChatItem;
             //登记传输信息：1036 回包按 unique_name 取回 MsgInfo 发起 1037
             UserMgr::GetInstance()->AddTransFile(msg_info->_unique_name, msg_info);
 
-            //1035 图片消息请求
+            //1035 请求（与图片消息同构，多带 msg_type/file_name 两个区分字段）
             QJsonObject imgObj;
             imgObj["fromuid"] = user_info->_uid;
             imgObj["touid"] = _chat_data->GetOtherId();
@@ -336,6 +403,8 @@ void ChatPage::on_send_btn_clicked()
             imgObj["name"] = msg_info->_unique_name;
             imgObj["token"] = UserMgr::GetInstance()->GetToken();
             imgObj["unique_id"] = uuidString;
+            imgObj["msg_type"] = static_cast<int>(msg_type);
+            imgObj["file_name"] = msg_info->_file_name;
             QJsonDocument doc(imgObj);
             emit TcpMgr::GetInstance()->sig_send_data(ReqId::ID_IMG_CHAT_MSG_REQ,
                 doc.toJson(QJsonDocument::Compact));
@@ -420,11 +489,12 @@ void ChatPage::on_send_btn_clicked()
 }
 
 //清空消息列表和气泡索引表（切换会话时用）：
-//_img_bubble_map 里存的是旧会话的气泡指针，清掉防止野指针（下载完成后查不到就自然跳过）
+//_download_done_map/_download_fail_map 里是旧会话气泡的刷新回调，清掉防止悬空调用
 void ChatPage::clearItems()
 {
     ui->chat_data_list->removeAllItem();
     _unrsp_item_map.clear();
     _base_item_map.clear();
-    _img_bubble_map.clear();
+    _download_done_map.clear();
+    _download_fail_map.clear();
 }

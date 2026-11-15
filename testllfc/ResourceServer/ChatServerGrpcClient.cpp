@@ -41,11 +41,25 @@ NotifyChatImgRsp ChatServerGrpcClient::NotifyChatImgMsg(int message_id, std::str
 	request.set_from_uid(chat_msg->sender_id);
 	request.set_to_uid(chat_msg->recv_id);
 	request.set_thread_id(chat_msg->thread_id);
+	//消息类型透传（1=图片 3=文件）：收图人客户端按它决定画图片气泡还是文件卡片
+	request.set_msg_type(chat_msg->msg_type);
+
+	//文件消息的 content 编码为 "unique_name|原始文件名"（| 分隔，uuid 不含 |）。
+	//file_name 只传 unique_name（落盘/下载定位用），原始文件名单独透传给文件卡片显示
+	std::string unique_name = chat_msg->content;
+	std::string original_name;
+	auto sep = unique_name.find('|');
+	if (sep != std::string::npos) {
+		original_name = unique_name.substr(sep + 1);
+		unique_name = unique_name.substr(0, sep);
+	}
+	request.set_file_name(unique_name);
+	request.set_original_name(original_name);
 
 	//图片总大小从落盘文件取（通知里带上，客户端下载时显示占位尺寸用）
 	auto file_dir = ConfigMgr::Inst().GetFileOutPath();
 	auto uid_str = std::to_string(chat_msg->sender_id);
-	auto file_path = (file_dir / uid_str / chat_msg->content);
+	auto file_path = (file_dir / uid_str / unique_name);
 	boost::system::error_code ec;
 	auto file_size = boost::filesystem::file_size(file_path, ec);
 	if (!ec) {

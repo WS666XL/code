@@ -135,10 +135,11 @@ struct MsgInfo{
     QString content;//图片消息=本地文件路径（上传用），文本消息=文字内容
     QPixmap pixmap;//文件和图片的缩略图
 
-    // ===== 图片消息专用字段（day39 图片聊天）=====
-    QString _md5;           //图片文件 MD5（随协议带，本版不做秒传/续传，先保留）
+    // ===== 图片/文件消息专用字段（day39 图片聊天 / day41 文件聊天）=====
+    QString _md5;           //文件 MD5（随协议带，本版不做秒传/续传，先保留）
     QString _unique_name;   //上传后的唯一文件名（uuid+原后缀），落盘/下载/历史记录都用它
-    qint64 _total_size = 0; //图片文件字节数（1035 请求与占位气泡用）
+    QString _file_name;     //原始文件名（文件卡片显示用；图片消息为空）
+    qint64 _total_size = 0; //文件字节数（1035 请求与占位气泡用）
     int _msg_id = 0;        //服务端 chat_message.message_id（1036 回包回填）
     int _sender = 0;        //发送者 uid
     int _receiver = 0;      //接收者 uid

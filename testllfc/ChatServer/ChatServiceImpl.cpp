@@ -150,6 +150,10 @@ Status ChatServiceImpl::NotifyChatImgMsg(::grpc::ServerContext* context,
 	rtvalue["img_name"] = request->file_name();
 	rtvalue["total_size"] = std::to_string(request->total_size());
 	rtvalue["thread_id"] = request->thread_id();
+	//消息类型透传（1=图片 3=文件），客户端按它画对应气泡
+	rtvalue["msg_type"] = request->msg_type();
+	//原始文件名透传（文件消息卡片显示用）
+	rtvalue["original_name"] = request->original_name();
 
 	std::string return_str = rtvalue.toStyledString();
 	session->Send(return_str, ID_NOTIFY_IMG_CHAT_MSG_REQ);

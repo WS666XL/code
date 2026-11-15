@@ -680,17 +680,27 @@ void TcpMgr::initHandlers()
                 continue;
             }
 
-            //图片消息（msg_type=PIC）：content 存唯一文件名，本地多半没有图片文件，
-            //构造占位 MsgInfo（预览图空白），气泡层发现本地缺图会自动发起下载
-            if (msg_type == int(ChatMsgType::PIC)) {
+            //图片/文件消息（msg_type=PIC/FILE）：服务端 content 存
+            //unique_name（图片）或 "unique_name|原始文件名"（文件），
+            //本地多半没有文件本体，构造占位 MsgInfo，气泡层自动发起下载
+            if (msg_type == int(ChatMsgType::PIC) || msg_type == int(ChatMsgType::FILE)) {
                 auto msg_info = std::make_shared<MsgInfo>();
-                msg_info->msgFlag = "image";
-                msg_info->_unique_name = msg_content;
+                msg_info->msgFlag = msg_type == int(ChatMsgType::FILE) ? "file" : "image";
+                //拆"unique_name|原始文件名"（图片消息无 |，整段就是 unique_name）
+                QString unique_name = msg_content;
+                QString original_name;
+                int sep = msg_content.indexOf('|');
+                if (sep >= 0) {
+                    original_name = msg_content.mid(sep + 1);
+                    unique_name = msg_content.left(sep);
+                }
+                msg_info->_unique_name = unique_name;
+                msg_info->_file_name = original_name;
                 msg_info->_msg_id = msg_id;
                 msg_info->_sender = send_uid;
                 msg_info->_receiver = UserMgr::GetInstance()->GetUid();
                 auto chat_data = std::make_shared<ImgChatData>(msg_info, "",
-                    thread_id, ChatFormType::PRIVATE, ChatMsgType::PIC,
+                    thread_id, ChatFormType::PRIVATE, static_cast<ChatMsgType>(msg_type),
                     send_uid, status, chat_time);
                 chat_data->SetMsgId(msg_id);
                 chat_datas.push_back(chat_data);
@@ -768,11 +778,18 @@ void TcpMgr::initHandlers()
         auto message_id = jsonObj["message_id"].toInt();
         auto img_name = jsonObj["img_name"].toString();
         auto total_size = static_cast<qint64>(jsonObj["total_size"].toString().toLongLong());
+        //消息类型（1=图片 3=文件）：文件消息还需要原始文件名画文件卡片
+        auto msg_type = jsonObj["msg_type"].toInt();
+        if (msg_type != int(ChatMsgType::PIC) && msg_type != int(ChatMsgType::FILE)) {
+            msg_type = int(ChatMsgType::PIC);   //老服务端没有该字段时兜底为图片
+        }
+        auto original_name = jsonObj["original_name"].toString();
 
-        //占位 MsgInfo：content 置空（本地无文件），图片就绪后按缓存路径加载
+        //占位 MsgInfo：content 置空（本地无文件），图片/文件气泡会自动发起下载
         auto msg_info = std::make_shared<MsgInfo>();
-        msg_info->msgFlag = "image";
+        msg_info->msgFlag = msg_type == int(ChatMsgType::FILE) ? "file" : "image";
         msg_info->_unique_name = img_name;
+        msg_info->_file_name = original_name;
         msg_info->_msg_id = message_id;
         msg_info->_sender = sender_id;
         msg_info->_receiver = UserMgr::GetInstance()->GetUid();
@@ -781,7 +798,7 @@ void TcpMgr::initHandlers()
         UserMgr::GetInstance()->AddTransFile(img_name, msg_info);
 
         auto img_chat_data = std::make_shared<ImgChatData>(msg_info, "",
-            thread_id, ChatFormType::PRIVATE, ChatMsgType::PIC,
+            thread_id, ChatFormType::PRIVATE, static_cast<ChatMsgType>(msg_type),
             sender_id, MsgStatus::READED);
 
         emit sig_img_chat_msg(img_chat_data);

@@ -66,6 +66,9 @@ public:
     // 图片服务器落盘在 output/static/<senderUid>/<imgName>，本地缓存到
     // AppData/<我的uid>/chatimg/<senderUid>/<imgName>；完成后发 sig_file_downloaded
     void DownloadChatImage(const QString& imgName, int senderUid);
+    // 下载聊天文件（day41：与图片同一条 1033 通道，缓存目录换 chatfile）：
+    // 完成后同样发 sig_file_downloaded，文件卡片把状态切到"点击打开"
+    void DownloadChatFile(const QString& fileName, int senderUid);
     // 上传聊天图片（老师消息 1037 链路）：1035 拿到 message_id 后调用。
     // 按唯一文件名从 UserMgr 取回 MsgInfo，读本地文件一口气分块发 1037
     //（每块带 message_id/sender/receiver；服务端最后一块落盘后更新消息状态并通知对方）
@@ -116,7 +119,8 @@ signals:
     void sig_upload_progress(int trans_size, int total_size); // 每块落盘后的进度回执
     void sig_upload_done(QString name);   // last==1：整份文件上传完成
     void sig_upload_head_done(QString name); // 头像上传完成：服务器已落盘+更新 DB/Redis 后回的 1032
-    void sig_file_downloaded(QString name); // 1033 下载完成：本地文件已就绪（头像/聊天图片共用）
+    void sig_file_downloaded(QString name); // 1033 下载完成：本地文件已就绪（头像/聊天图片/聊天文件共用）
+    void sig_download_failed(QString name); // 1033 下载失败（文件不存在/登录态失效），界面恢复可重试状态
     void sig_connection_closed();         // 连接被服务器断开
 };
 

@@ -132,6 +132,8 @@ message NotifyChatImgReq {
   string file_name = 4;
   int64 total_size = 5;
   int32 thread_id = 6;
+  int32 msg_type = 7;          //消息类型：1=图片 3=文件（文件聊天与图片共用这套通知链路）
+  string original_name = 8;    //原始文件名（文件卡片显示用；图片消息为空）
 }
 
 message NotifyChatImgRsp {
@@ -142,6 +144,7 @@ message NotifyChatImgRsp {
   string file_name = 5;
   int64 total_size = 6;
   int32 thread_id = 7;
+  int32 msg_type = 8;
 }
 
 service ChatService {

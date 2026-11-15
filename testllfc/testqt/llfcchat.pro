@@ -52,6 +52,7 @@ SOURCES += \
     mainwindow.cpp \
     messagetextedit.cpp \
     picturebubble.cpp \
+    filebubble.cpp \
     registerdialog.cpp \
     resetdialog.cpp \
     searchlist.cpp \
@@ -100,6 +101,7 @@ HEADERS += \
     mainwindow.h \
     messagetextedit.h \
     picturebubble.h \
+    filebubble.h \
     registerdialog.h \
     resetdialog.h \
     searchlist.h \

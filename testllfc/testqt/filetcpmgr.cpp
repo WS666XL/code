@@ -250,6 +250,8 @@ void FileTcpMgr::initHandlers()
             // 时不会走到下载，所以一般是异常数据）、1010/1011 登录态失效
             qDebug() << "FileTcpMgr download failed, err is" << err << "name is" << name;
             _downloading.remove(name);
+            //通知界面恢复可重试状态（文件卡片状态会卡在"下载中"，图片气泡占位不变）
+            emit sig_download_failed(name);
             return;
         }
 
@@ -570,6 +572,39 @@ void FileTcpMgr::DownloadChatImage(const QString& imgName, int senderUid)
     qDebug() << "FileTcpMgr DownloadChatImage start:" << imgName
              << "sender" << senderUid;
     SendDownloadReq(imgName, senderUid, ctx.client_path, 1);
+}
+
+// 下载聊天文件（day41）：与 DownloadChatImage 完全同构，只是缓存目录换成
+// AppData/<我的uid>/chatfile/<发送者uid>/（文件卡片下载的是文件本体，
+// 与气泡预览用的图片缓存分开，互不干扰）
+void FileTcpMgr::DownloadChatFile(const QString& fileName, int senderUid)
+{
+    if (_socket.state() != QAbstractSocket::ConnectedState) {
+        qDebug() << "FileTcpMgr DownloadChatFile failed: resource server not connected";
+        return;
+    }
+    if (fileName.isEmpty() || _downloading.contains(fileName)) {
+        return;
+    }
+
+    QString storage_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QString file_dir = storage_dir + "/" + QString::number(UserMgr::GetInstance()->GetUid())
+                       + "/chatfile/" + QString::number(senderUid);
+    QDir dir(file_dir);
+    if (!dir.exists() && !dir.mkpath(".")) {
+        qDebug() << "FileTcpMgr DownloadChatFile mkpath failed:" << file_dir;
+        return;
+    }
+
+    DownloadCtx ctx;
+    ctx.owner_uid = senderUid;
+    ctx.client_path = dir.filePath(fileName);
+    ctx.next_seq = 1;
+    _downloading.insert(fileName, ctx);
+
+    qDebug() << "FileTcpMgr DownloadChatFile start:" << fileName
+             << "sender" << senderUid;
+    SendDownloadReq(fileName, senderUid, ctx.client_path, 1);
 }
 
 // 上传聊天图片（1037）：发送方收到 1036（拿到 message_id）后调用。

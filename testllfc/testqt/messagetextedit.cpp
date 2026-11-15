@@ -168,7 +168,26 @@ void MessageTextEdit::insertTextFile(const QString &url)
     QPixmap pix = getFileIconPixmap(url);
     QTextCursor cursor = this->textCursor();
     cursor.insertImage(pix.toImage(),url);
-    insertMsgList(mMsgList,"file",url,pix);
+
+    //day41 文件消息：与图片消息同构的三个服务端字段（md5/唯一文件名/大小），
+    //1035 入库和 1037 上传都按这套字段走；文件卡片显示原始文件名+大小
+    QCryptographicHash hash(QCryptographicHash::Md5);
+    QFile file(url);
+    if (file.open(QIODevice::ReadOnly)) {
+        hash.addData(&file);
+        file.close();
+    }
+
+    MsgInfo msg;
+    msg.msgFlag = "file";
+    msg.content = url;           //本地路径：发送时 1037 按它读文件
+    msg.pixmap = pix;            //输入框预览（文件图标卡片样式）
+    msg._md5 = hash.result().toHex();
+    msg._unique_name = QUuid::createUuid().toString(QUuid::WithoutBraces)
+                       + "." + fileInfo.suffix().toLower();
+    msg._total_size = fileInfo.size();
+    msg._file_name = fileInfo.fileName();  //原始文件名：文件卡片显示用（unique_name 是 uuid，用户看不懂）
+    mMsgList.append(msg);
 }
 
 bool MessageTextEdit::canInsertFromMimeData(const QMimeData *source) const
