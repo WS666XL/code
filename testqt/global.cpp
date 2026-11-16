@@ -228,6 +228,10 @@ QPixmap LoadAvatarPixmap(const QString& icon, const QSize& size, int owner_uid)
     // 首次调用时顺带把 1057 头像变更通知挂上（静态懒加载，重复调用零成本）：
     // 任何界面加载头像就意味着本客户端会显示别人的头像，必须监听变更
     EnsureAvatarUpdateConnected();
+    // 下载完成回调也必须无条件挂上：此前只在"本地缺文件"的失败分支里挂，
+    // 如果本次运行所有头像都能从本地加载（没走失败分支），1057 触发的下载
+    // 完成后没有任何槽刷新 label，会话列表/联系人就会一直停在旧头像
+    EnsureAvatarSignalConnected();
 
     // 不传 owner_uid（0）就当作"自己的头像"，用当前登录 uid
     if (owner_uid <= 0) {
@@ -298,7 +302,6 @@ QPixmap LoadAvatarPixmap(const QString& icon, const QSize& size, int owner_uid)
     // ---- 加载失败：默认头像兜底 + 异步下载回显 ----
     // 只有"服务器文件名"形态才值得下载（本地路径失败是文件真丢了，默认头像兜底即可）
     if (!is_res_path && !icon.contains('/') && !icon.isEmpty()) {
-        EnsureAvatarSignalConnected();
         FileTcpMgr::GetInstance()->DownloadAvatar(icon, owner_uid);
     }
     // 先显示默认头像占位；下载完成后 sig_avatar_downloaded 会把注册的 label 重刷
@@ -317,7 +320,10 @@ QPixmap LoadAvatarPixmap(QLabel* label, const QString& icon, const QSize& size, 
 {
     QPixmap result = LoadAvatarPixmap(icon, size, owner_uid);
     if (label && !icon.isEmpty()) {
-        if (owner_uid <= 0) {
+        // 资源路径（默认头像）不归属任何用户：不能把 owner_uid=0 解析成自己，
+        // 否则自己换头像时 RefreshSelfAvatar 会把这些默认图标误刷成自己的头像
+        //（例如"新的朋友"入口、假申请条目）
+        if (owner_uid <= 0 && !icon.startsWith(":/")) {
             owner_uid = UserMgr::GetInstance()->GetUid();
         }
         auto& list = PendingAvatarLabels();

@@ -18,3 +18,6 @@ Makefile
 
 # 老师参考代码（独立仓库，不纳入本项目）
 llfcchat/
+
+# VarifyServer 的 node 依赖
+node_modules/
