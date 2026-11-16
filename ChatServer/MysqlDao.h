@@ -193,6 +193,12 @@ public:
 	bool AddChatMsg(std::vector<std::shared_ptr<ChatMessage>>& chat_datas);
 	// 删除单条消息（仅当前用户视角）：写 chat_message_deleted，历史加载时过滤
 	bool DeleteChatMsgForUser(int messageId, int uid);
+	// 修改个人资料：昵称/描述（desc 是 MySQL 关键字，SQL 里要加反引号）
+	bool UpdateUserInfo(int uid, const std::string& nick, const std::string& desc);
+	// 好友备注：写 friend 表的 back 列（self_id → friend_id 这一行）
+	bool UpdateFriendRemark(int selfId, int friendId, const std::string& remark);
+	// 删除好友：只删自己这一侧的 friend 行（对方好友列表不受影响）
+	bool DeleteFriendOneSide(int selfId, int friendId);
 private:
 	std::unique_ptr<MySqlPool> pool_;
 };

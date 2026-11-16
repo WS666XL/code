@@ -50,6 +50,11 @@ public:
     void CloseConnection();
     // 删除单条消息（1061）：服务端只给当前用户写删除标记，对方记录不变
     void DeleteChatMsg(int message_id);
+    // 修改个人资料（1020）：只改昵称/描述
+    void UpdateUserInfo(const QString& nick, const QString& desc);
+    // 设置好友备注（1063）/ 删除好友（1065）
+    void SetFriendRemark(int friend_uid, const QString& remark);
+    void DeleteFriend(int friend_uid);
 
 signals:
     void sig_con_success(bool bsuccess);        // 连接结果（true 成功 / false 失败）
@@ -102,6 +107,11 @@ signals:
 
     // 1062 删除单条消息回包：error=0 成功；message_id 原样带回
     void sig_delete_chat_msg_rsp(int error, int message_id);
+
+    // 1022 修改个人资料回包 / 1064 好友备注回包 / 1066 删除好友回包
+    void sig_update_user_info_rsp(int error, QString nick, QString desc);
+    void sig_set_friend_remark_rsp(int error, int friend_uid, QString remark);
+    void sig_delete_friend_rsp(int error, int friend_uid);
 
     //头像变更通知（1057）：uid 是换了头像的用户，icon 是服务器上的新头像文件名。
     //global 的头像缓存模块靠 icon 更新本地记录并重新下载

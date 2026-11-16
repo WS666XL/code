@@ -14,6 +14,10 @@ class ContactUserList : public QListWidget//联系人列表
 public:
     ContactUserList(QWidget *parent = nullptr);
     void ShowRedPoint(bool bshow = true);//设置红点
+    //好友备注/昵称变化时刷新联系人条目
+    void RefreshFriendInfo(int uid);
+    //删除好友时移除联系人条目
+    void RemoveFriend(int uid);
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override ;
 

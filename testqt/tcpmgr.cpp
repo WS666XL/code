@@ -882,6 +882,45 @@ void TcpMgr::initHandlers()
         int message_id = jsonObj["message_id"].toInt();
         emit sig_delete_chat_msg_rsp(error, message_id);
     });
+
+    // 1022 修改个人资料回包：{error, uid, nick, desc}
+    _handlers.insert(ID_UPDATE_USER_INFO_RSP, [this](ReqId id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        Q_UNUSED(id);
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+        if (jsonDoc.isNull()) {
+            return;
+        }
+        QJsonObject jsonObj = jsonDoc.object();
+        emit sig_update_user_info_rsp(jsonObj["error"].toInt(),
+            jsonObj["nick"].toString(), jsonObj["desc"].toString());
+    });
+
+    // 1064 设置好友备注回包：{error, friend_uid, remark}
+    _handlers.insert(ID_SET_FRIEND_REMARK_RSP, [this](ReqId id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        Q_UNUSED(id);
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+        if (jsonDoc.isNull()) {
+            return;
+        }
+        QJsonObject jsonObj = jsonDoc.object();
+        emit sig_set_friend_remark_rsp(jsonObj["error"].toInt(),
+            jsonObj["friend_uid"].toInt(), jsonObj["remark"].toString());
+    });
+
+    // 1066 删除好友回包：{error, friend_uid}
+    _handlers.insert(ID_DELETE_FRIEND_RSP, [this](ReqId id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        Q_UNUSED(id);
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+        if (jsonDoc.isNull()) {
+            return;
+        }
+        QJsonObject jsonObj = jsonDoc.object();
+        emit sig_delete_friend_rsp(jsonObj["error"].toInt(),
+            jsonObj["friend_uid"].toInt());
+    });
 }
 
 // 主动关闭连接：emit 内部信号，由 slot_tcp_close 在对象所属线程里真正 close
@@ -900,6 +939,42 @@ void TcpMgr::DeleteChatMsg(int message_id)
     jsonObj["uid"] = UserMgr::GetInstance()->GetUid();
     QJsonDocument doc(jsonObj);
     emit sig_send_data(ID_DELETE_CHAT_MSG_REQ, doc.toJson(QJsonDocument::Compact));
+}
+
+// 修改个人资料（1020）：只发昵称/描述，uid 由服务端从 session 取
+void TcpMgr::UpdateUserInfo(const QString& nick, const QString& desc)
+{
+    QJsonObject jsonObj;
+    jsonObj["uid"] = UserMgr::GetInstance()->GetUid();
+    jsonObj["nick"] = nick;
+    jsonObj["desc"] = desc;
+    QJsonDocument doc(jsonObj);
+    emit sig_send_data(ID_UPDATE_USER_INFO_REQ, doc.toJson(QJsonDocument::Compact));
+}
+
+// 设置好友备注（1063）
+void TcpMgr::SetFriendRemark(int friend_uid, const QString& remark)
+{
+    if (friend_uid <= 0) {
+        return;
+    }
+    QJsonObject jsonObj;
+    jsonObj["friend_uid"] = friend_uid;
+    jsonObj["remark"] = remark;
+    QJsonDocument doc(jsonObj);
+    emit sig_send_data(ID_SET_FRIEND_REMARK_REQ, doc.toJson(QJsonDocument::Compact));
+}
+
+// 删除好友（1065）：只删自己这一侧
+void TcpMgr::DeleteFriend(int friend_uid)
+{
+    if (friend_uid <= 0) {
+        return;
+    }
+    QJsonObject jsonObj;
+    jsonObj["friend_uid"] = friend_uid;
+    QJsonDocument doc(jsonObj);
+    emit sig_send_data(ID_DELETE_FRIEND_REQ, doc.toJson(QJsonDocument::Compact));
 }
 
 // 关闭socket：外部调 CloseConnection() → 发 sig_close → 转到 slot_tcp_close

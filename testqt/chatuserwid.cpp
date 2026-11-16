@@ -56,7 +56,8 @@ void ChatUserWid::SetChatData(std::shared_ptr<ChatThreadData> chat_data) {
         ui->icon_lb->size(), other_id));
     ui->icon_lb->setScaledContents(true);
 
-    ui->user_name_lb->setText(other_info->_name);
+    //好友显示名优先级：备注 > 昵称 > 用户名
+    ui->user_name_lb->setText(other_info->DisplayName());
     //最后一条消息来自会话缓存（1029 预加载历史时会不断刷新）
     ui->user_chat_lb->setText(_chat_data->GetLastMsg());
 }

@@ -32,6 +32,8 @@ public:
     std::vector<std::shared_ptr<ApplyInfo>> GetApplyList();
     bool AlreadyApply(int uid);
     void AddApplyList(std::shared_ptr<ApplyInfo>app);
+    //移除某人的好友申请记录（同意后清掉，避免下次重新加好友被 AlreadyApply 误判为重复）
+    void RemoveApply(int uid);
     void SetUserInfo(std::shared_ptr<UserInfo>user_info);
     void AppendApplyList(QJsonArray array);
     void AppendFriendList(QJsonArray array);
@@ -39,6 +41,13 @@ public:
     void AddFriend(std::shared_ptr<AuthRsp> auth_rsp);
     void AddFriend(std::shared_ptr<AuthInfo> auth_info);
     std::shared_ptr<UserInfo> GetFriendById(int uid);
+    //修改个人资料成功后更新自己的 nick/desc
+    void UpdateSelfInfo(const QString& nick, const QString& desc);
+    //好友备注（1064 成功）/ 删除好友（1066 成功）后更新本地好友缓存
+    bool SetFriendRemark(int uid, const QString& remark);
+    bool RemoveFriend(int uid);
+    //删除好友后连会话缓存一起移除（按对方 uid 找 thread_id）
+    void RemoveChatThreadByOtherUid(int uid);
     //头像变更（1057）：更新内存里该用户的 icon 文件名。
     //登录时 icon 是从 DB 拉的，运行期间对方换头像只能靠通知同步；
     //不更新这里的话，列表/气泡后续重绘仍会用旧 icon（重登录才恢复）

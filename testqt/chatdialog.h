@@ -64,6 +64,9 @@ private:
     QTimer* _timer; // 心跳定时器：每 10s 发一次 ID_HEART_BEAT_REQ 保持链路活跃
     LoadingDlg* _loading_dlg;                    //全屏加载蒙层
     std::shared_ptr<ChatThreadData> _cur_load_chat;  //当前正在预加载历史消息的会话
+    //重新加好友/新建私聊后，定向补拉该会话的历史消息（1029/1030），
+    //和登录时的全局预加载分开，避免打乱 _cur_load_chat 的推进顺序
+    int _pending_history_thread_id = 0;
     //day36：设置入口和用户信息页。
     //_side_settings_lb 不在 chatdialog.ui 里，构造函数里动态 new 出来
     //插到 verticalLayout_3（side_head_lb/side_chat_lb/side_contact_lb 之后），

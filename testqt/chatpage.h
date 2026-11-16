@@ -13,6 +13,7 @@ class ChatPage;
 }
 
 class ChatItemBase;
+class QToolButton;
 
 /******************************************************************************
  *  文件：chatpage.h
@@ -43,6 +44,14 @@ public:
     void UpdateImgChatStatus(std::shared_ptr<ImgChatData> msg);
     //头像变更实时刷新（1057）：当前会话里所有由该用户发出的消息气泡重刷头像
     void RefreshAvatarForUid(int uid);
+    //好友备注变化后刷新聊天页标题（备注 > 昵称 > 用户名）
+    void RefreshFriendDisplay();
+    //好友备注变化后刷新当前会话里"对方发的"气泡名字
+    void RefreshFriendNameForUid(int uid);
+    //自己的昵称/资料变化后刷新当前会话里自己气泡的名字
+    void RefreshSelfInfo();
+    //删除好友后清空当前聊天页（会话缓存由 ChatDialog 移除）
+    void ClearChat();
 protected:
     // 重写绘图事件：背景是圆角矩形，所以自己画，不交给 QWidget 默认画
    virtual void paintEvent(QPaintEvent *event) override;
@@ -60,6 +69,8 @@ private:
     QString DisplayNameForUid(int uid);
     //按消息日期在聊天页插入"今天/昨天/更早日期"分隔条
     void MaybeAppendDateSeparator(const QString& chat_time);
+    //聊天页标题右侧"..."菜单：好友备注 / 删除好友
+    void ShowFriendMenu();
     //右键气泡弹"删除"菜单：msg 用于删缓存、发 1061 服务端标记
     void AttachDeleteMenu(QWidget* bubble, std::shared_ptr<ChatDataBase> msg);
     //删除单条消息：先从页面/本地缓存移除，再发 1061 落服务端删除标记
@@ -86,6 +97,8 @@ private:
     QPointer<QWidget> _emoji_panel;
     //上一条消息的日期：用于判断是否需要插入新的日期分隔条
     QDate _last_sep_date;
+    //标题右侧"..."按钮（私聊显示，群聊隐藏）
+    QToolButton* _more_btn = nullptr;
 };
 
 #endif // CHATPAGE_H

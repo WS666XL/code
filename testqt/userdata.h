@@ -140,12 +140,19 @@ struct UserInfo {
 
     UserInfo() = default;
 
-    int _uid;
+    //显示名优先级：好友备注 > 用户名。
+    //昵称修改功能已移除，界面不再使用 _nick，避免改名后各页面显示不一致
+    QString DisplayName() const {
+        return _remark.isEmpty() ? _name : _remark;
+    }
+
+    int _uid = 0;
     QString _name;
     QString _nick;
     QString _icon;
-    int _sex;
+    int _sex = 0;
     QString _desc;
+    QString _remark;   //好友备注（friend.back；仅好友列表里有意义）
 };
 
 Q_DECLARE_METATYPE(std::shared_ptr<UserInfo>)

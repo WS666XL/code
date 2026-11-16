@@ -49,6 +49,12 @@ private:
 	void LoadChatMsg(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
 	// 删除单条消息（只影响当前登录用户自己的历史记录）
 	void DeleteChatMsg(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
+	// 修改个人资料（昵称/描述）
+	void UpdateUserInfo(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
+	// 设置好友备注（单侧，写 friend.back）
+	void SetFriendRemark(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
+	// 删除好友（单侧：只删自己的 friend 行）
+	void DeleteFriend(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
 	void DealChatImgMsg(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
 	// day41 群聊：建群（发起人选好友成群）
 	void DealCreateGroup(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);

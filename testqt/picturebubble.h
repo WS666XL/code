@@ -27,6 +27,8 @@ public:
     void setProgress(qint64 value, qint64 total);
     //传输上下文：unique_name 用于暂停/继续时找回上传任务或下载上下文
     void setTransferContext(const QString& name, bool is_upload);
+    //记录图片本地路径：传输完成后单击图片可全屏预览、另存为
+    void setLocalPath(const QString& path) { _local_path = path; }
     //按状态刷新进度条（上传中/下载中/已暂停/完成/失败）
     void setTransferState(TransferState state);
 
@@ -43,11 +45,13 @@ private:
     //进度条显示/隐藏后气泡高度会变，统一在这里重算固定尺寸
     void adjustBubbleSize();
     void refreshProgressText();
+    void ShowPreview();   //全屏预览 + 另存为
 
     QLabel* _pic_lb;
     QProgressBar* _progress_bar;   //上传/下载进度条（默认隐藏）
     QSize _pic_size;               //图片显示尺寸（构造时确定，避免气泡跳动）
     QString _unique_name;          //服务器唯一文件名（暂停/继续用）
+    QString _local_path;           //本地图片路径（预览/另存为用）
     bool _is_upload = false;       //当前气泡在传的是上传还是下载
     TransferState _state = TransferState::None;
     int _percent = 0;

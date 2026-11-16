@@ -1,4 +1,5 @@
 #include "usermgr.h"
+#include <algorithm>
 #include "qjsonarray.h"
 UserMgr::~UserMgr()
 {
@@ -47,14 +48,27 @@ std::vector<std::shared_ptr<ApplyInfo> > UserMgr::GetApplyList()
 
 bool UserMgr::AlreadyApply(int uid)
 {
-    for(auto& apply:_apply_list)
-    {
-        if(apply->_uid==uid)
-        {
+    //只把"待处理"的申请算重复；已同意/已拒绝的旧记录不能挡住新申请
+    std::lock_guard<std::mutex> lock(_mtx);
+    for (auto& apply : _apply_list) {
+        if (apply->_uid == uid && apply->_status == 0) {
             return true;
         }
     }
     return false;
+}
+
+void UserMgr::RemoveApply(int uid)
+{
+    std::lock_guard<std::mutex> lock(_mtx);
+    for (auto it = _apply_list.begin(); it != _apply_list.end(); ) {
+        if ((*it)->_uid == uid) {
+            it = _apply_list.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
 }
 
 void UserMgr::AddApplyList(std::shared_ptr<ApplyInfo> app)
@@ -95,9 +109,10 @@ void UserMgr::AppendFriendList(QJsonArray array)
         auto sex = value["sex"].toInt();
         auto uid = value["uid"].toInt();
 
-        //好友统一用 UserInfo 存（旧的 FriendInfo 已并入 UserInfo），备注字段本版暂不展示
+        //好友统一用 UserInfo 存；back 列是"好友备注"，没有备注时显示昵称/用户名
         auto info = std::make_shared<UserInfo>(uid, name,
                                                  nick, icon, sex, "", desc);
+        info->_remark = value["back"].toString();
         _friend_list.push_back(info);
         _friend_map.insert(uid, info);
     }
@@ -152,6 +167,56 @@ void UserMgr::UpdateUserIcon(int uid, const QString& icon)
     if (find_it != _friend_map.end()) {
         (*find_it)->_icon = icon;
     }
+}
+
+void UserMgr::UpdateSelfInfo(const QString& nick, const QString& desc)
+{
+    std::lock_guard<std::mutex> lock(_mtx);
+    if (_user_info) {
+        _user_info->_nick = nick;
+        _user_info->_desc = desc;
+    }
+}
+
+bool UserMgr::SetFriendRemark(int uid, const QString& remark)
+{
+    std::lock_guard<std::mutex> lock(_mtx);
+    auto find_it = _friend_map.find(uid);
+    if (find_it == _friend_map.end()) {
+        return false;
+    }
+    (*find_it)->_remark = remark;
+    return true;
+}
+
+bool UserMgr::RemoveFriend(int uid)
+{
+    std::lock_guard<std::mutex> lock(_mtx);
+    bool removed = _friend_map.remove(uid) > 0;
+    for (auto it = _friend_list.begin(); it != _friend_list.end(); ) {
+        if ((*it)->_uid == uid) {
+            it = _friend_list.erase(it);
+        }
+        else {
+            ++it;
+        }
+    }
+    return removed;
+}
+
+void UserMgr::RemoveChatThreadByOtherUid(int uid)
+{
+    std::lock_guard<std::mutex> lock(_mtx);
+    auto it = _uid_to_thread_id.find(uid);
+    if (it == _uid_to_thread_id.end()) {
+        return;
+    }
+    const int thread_id = it.value();
+    _uid_to_thread_id.erase(it);
+    _chat_map.remove(thread_id);
+    _chat_thread_ids.erase(
+        std::remove(_chat_thread_ids.begin(), _chat_thread_ids.end(), thread_id),
+        _chat_thread_ids.end());
 }
 
 std::vector<std::shared_ptr<UserInfo> > UserMgr::GetChatListPerPage()

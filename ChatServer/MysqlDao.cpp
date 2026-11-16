@@ -263,7 +263,9 @@ bool MysqlDao::AddFriendApply(const int& from, const int& to)
 	try {
 		// 准备SQL语句
 		std::unique_ptr<sql::PreparedStatement> pstmt(con->_con->prepareStatement("INSERT INTO friend_apply (from_uid, to_uid) values (?,?) "
-			"ON DUPLICATE KEY UPDATE from_uid = from_uid, to_uid = to_uid"));
+			// 重复申请（例如删好友后重新加）要把旧记录重置成未处理，
+			// 否则 status 一直停在 1，对方客户端会当成"已处理过"忽略新申请
+			"ON DUPLICATE KEY UPDATE status = 0"));
 		pstmt->setInt(1, from); // from id
 		pstmt->setInt(2, to);
 		// 执行更新
@@ -298,7 +300,7 @@ bool MysqlDao::GetApplyList(int touid, std::vector<std::shared_ptr<ApplyInfo>>& 
 		// 准备SQL语句, 根据起始id和限制条数返回列表
 		std::unique_ptr<sql::PreparedStatement> pstmt(con->_con->prepareStatement("select apply.from_uid, apply.status, user.name, "
 			"user.nick, user.sex, user.icon from friend_apply as apply join user on apply.from_uid = user.uid where apply.to_uid = ? "
-			"and apply.id > ? order by apply.id ASC LIMIT ? "));
+			"and apply.id > ? and apply.status = 0 order by apply.id ASC LIMIT ? "));
 
 		pstmt->setInt(1, touid); // 将uid替换为你要查询的uid
 		pstmt->setInt(2, begin); // 起始id
@@ -466,7 +468,8 @@ bool MysqlDao::GetFriendList(int self_id, std::vector<std::shared_ptr<UserInfo> 
 				continue;
 			}
 
-			user_info->back = user_info->name;
+			// back 列作为"好友备注"：没有备注时为空，客户端按 备注>昵称>用户名 回退
+			user_info->back = back;
 			user_info_list.push_back(user_info);
 		}
 		return true;
@@ -516,6 +519,11 @@ bool MysqlDao::GetUserThreads(
 			"    FROM private_chat p "
 			"   WHERE (p.user1_id = ? OR p.user2_id = ?) "
 			"     AND p.thread_id > ? "
+			// 只返回"当前用户仍然保留好友"的私聊线程：
+			// 单侧删除好友后，重新登录不能把已删除的会话又拉回来
+			"     AND EXISTS (SELECT 1 FROM friend f "
+			"                  WHERE f.self_id = ? "
+			"                    AND f.friend_id = IF(p.user1_id = ?, p.user2_id, p.user1_id)) "
 			"  UNION ALL "
 			"  SELECT g.thread_id, 'group' AS type, 0 AS user1_id, 0 AS user2_id, gc.group_name, "
 			"    (SELECT COUNT(*) FROM group_chat_member m WHERE m.thread_id = g.thread_id) AS member_count "
@@ -532,11 +540,16 @@ bool MysqlDao::GetUserThreads(
 		std::unique_ptr<sql::PreparedStatement> pstmt(
 			conn->prepareStatement(sql));
 
-		// 绑定参数：? 对应 (userId, userId, lastId, userId, lastId, pageSize+1)
+		// 绑定参数：
+		// userId,userId,lastId（private 基本条件）
+		// userId,userId（friend 过滤：self_id + 判断对方是 user1 还是 user2）
+		// userId,lastId（group 分支） + LIMIT
 		int idx = 1;
 		pstmt->setInt64(idx++, userId);              // private.user1_id
 		pstmt->setInt64(idx++, userId);              // private.user2_id
 		pstmt->setInt64(idx++, lastId);              // private.thread_id > lastId
+		pstmt->setInt64(idx++, userId);              // friend.self_id
+		pstmt->setInt64(idx++, userId);              // IF(p.user1_id = ?, ...)
 		pstmt->setInt64(idx++, userId);              // group.user_id
 		pstmt->setInt64(idx++, lastId);              // group.thread_id > lastId
 		pstmt->setInt(idx++, pageSize + 1);          // LIMIT pageSize+1
@@ -867,6 +880,89 @@ bool MysqlDao::DeleteChatMsgForUser(int message_id, int uid)
 	}
 	catch (sql::SQLException& e) {
 		std::cerr << "SQLException in DeleteChatMsgForUser: " << e.what() << std::endl;
+		return false;
+	}
+}
+
+// 修改个人资料：昵称 + 描述。desc 是 MySQL 关键字，必须用反引号包起来
+bool MysqlDao::UpdateUserInfo(int uid, const std::string& nick, const std::string& desc)
+{
+	auto con = pool_->getConnection();
+	if (!con) {
+		return false;
+	}
+	Defer defer([this, &con]() {
+		pool_->returnConnection(std::move(con));
+		});
+	auto& conn = con->_con;
+
+	try {
+		const std::string sql = "UPDATE user SET nick = ?, `desc` = ? WHERE uid = ?";
+		std::unique_ptr<sql::PreparedStatement> pstmt(conn->prepareStatement(sql));
+		pstmt->setString(1, nick);
+		pstmt->setString(2, desc);
+		pstmt->setInt(3, uid);
+		pstmt->executeUpdate();
+		return true;
+	}
+	catch (sql::SQLException& e) {
+		std::cerr << "SQLException in UpdateUserInfo: " << e.what() << std::endl;
+		return false;
+	}
+}
+
+// 好友备注：只更新 self_id → friend_id 这一行的 back 列，
+// 对方看到的名字不受影响（单侧备注）
+bool MysqlDao::UpdateFriendRemark(int self_id, int friend_id, const std::string& remark)
+{
+	auto con = pool_->getConnection();
+	if (!con) {
+		return false;
+	}
+	Defer defer([this, &con]() {
+		pool_->returnConnection(std::move(con));
+		});
+	auto& conn = con->_con;
+
+	try {
+		const std::string sql = "UPDATE friend SET back = ? WHERE self_id = ? AND friend_id = ?";
+		std::unique_ptr<sql::PreparedStatement> pstmt(conn->prepareStatement(sql));
+		pstmt->setString(1, remark);
+		pstmt->setInt(2, self_id);
+		pstmt->setInt(3, friend_id);
+		pstmt->executeUpdate();
+		// 备注和原值相同 affected=0，也算成功；只有 SQL 异常才算失败
+		return true;
+	}
+	catch (sql::SQLException& e) {
+		std::cerr << "SQLException in UpdateFriendRemark: " << e.what() << std::endl;
+		return false;
+	}
+}
+
+// 删除好友：只删自己这一侧的 friend 行（对方好友列表保留）
+bool MysqlDao::DeleteFriendOneSide(int self_id, int friend_id)
+{
+	auto con = pool_->getConnection();
+	if (!con) {
+		return false;
+	}
+	Defer defer([this, &con]() {
+		pool_->returnConnection(std::move(con));
+		});
+	auto& conn = con->_con;
+
+	try {
+		const std::string sql = "DELETE FROM friend WHERE self_id = ? AND friend_id = ?";
+		std::unique_ptr<sql::PreparedStatement> pstmt(conn->prepareStatement(sql));
+		pstmt->setInt(1, self_id);
+		pstmt->setInt(2, friend_id);
+		pstmt->executeUpdate();
+		// 幂等：重复删除/好友本来就不存在也当成功，客户端可以正常清理残留会话
+		return true;
+	}
+	catch (sql::SQLException& e) {
+		std::cerr << "SQLException in DeleteFriendOneSide: " << e.what() << std::endl;
 		return false;
 	}
 }

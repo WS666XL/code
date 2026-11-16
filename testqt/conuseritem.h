@@ -20,6 +20,8 @@ public:
     void SetInfo(std::shared_ptr<AuthInfo> auth_info);
     void SetInfo(std::shared_ptr<AuthRsp> auth_rsp);
     void SetInfo(int uid, QString name, QString icon);
+    //按 UserInfo 刷新（好友备注/昵称变化时重新显示）
+    void SetInfo(std::shared_ptr<UserInfo> info);
     void ShowRedPoint(bool show = false);
     std::shared_ptr<UserInfo> GetInfo();
 private:

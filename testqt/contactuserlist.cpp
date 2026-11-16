@@ -34,6 +34,37 @@ void ContactUserList::ShowRedPoint(bool bshow /*= true*/)
     _add_friend_item->ShowRedPoint(bshow);
 }
 
+//好友备注变化后，找到对应联系人条目并按最新 UserInfo 重画
+void ContactUserList::RefreshFriendInfo(int uid)
+{
+    for (int i = 0; i < count(); ++i) {
+        auto* item = this->item(i);
+        auto* wid = qobject_cast<ConUserItem*>(itemWidget(item));
+        if (!wid || !wid->GetInfo() || wid->GetInfo()->_uid != uid) {
+            continue;
+        }
+        auto info = UserMgr::GetInstance()->GetFriendById(uid);
+        if (info) {
+            wid->SetInfo(info);
+        }
+        return;
+    }
+}
+
+//删除好友后移除联系人条目
+void ContactUserList::RemoveFriend(int uid)
+{
+    for (int i = 0; i < count(); ++i) {
+        auto* item = this->item(i);
+        auto* wid = qobject_cast<ConUserItem*>(itemWidget(item));
+        if (!wid || !wid->GetInfo() || wid->GetInfo()->_uid != uid) {
+            continue;
+        }
+        delete takeItem(i);
+        return;
+    }
+}
+
 void ContactUserList::addContactUserList()
 {
     auto * groupTip = new GroupTipItem();
@@ -69,7 +100,8 @@ void ContactUserList::addContactUserList()
     auto con_list = UserMgr::GetInstance()->GetConListPerPage();
     for(auto & con_ele : con_list){
         auto *con_user_wid = new ConUserItem();
-        con_user_wid->SetInfo(con_ele->_uid,con_ele->_name, con_ele->_icon);
+        //用完整 UserInfo：显示名按 备注 > 昵称 > 用户名
+        con_user_wid->SetInfo(con_ele);
         QListWidgetItem *item = new QListWidgetItem;
         //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
         item->setSizeHint(con_user_wid->sizeHint());

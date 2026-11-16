@@ -67,6 +67,12 @@ enum ReqId{
     ID_NOTIFY_AVATAR_UPDATE_REQ = 1057, //头像变更通知（服务端推在线用户，客户端删缓存重新下载回显）
     ID_DELETE_CHAT_MSG_REQ = 1061,   //删除单条消息（只删自己视角，落 chat_message_deleted）
     ID_DELETE_CHAT_MSG_RSP = 1062,   //删除单条消息回包
+    ID_SET_FRIEND_REMARK_REQ = 1063, //设置好友备注（写 friend.back）
+    ID_SET_FRIEND_REMARK_RSP = 1064, //设置好友备注回包
+    ID_DELETE_FRIEND_REQ = 1065,     //删除好友（只删自己这一侧）
+    ID_DELETE_FRIEND_RSP = 1066,     //删除好友回包
+    ID_UPDATE_USER_INFO_REQ = 1020,  //修改个人资料（昵称/描述）
+    ID_UPDATE_USER_INFO_RSP = 1022,  //修改个人资料回包
 };
 
 // 统一错误码：网络层和业务层共用一套编号，便于判断成功与否

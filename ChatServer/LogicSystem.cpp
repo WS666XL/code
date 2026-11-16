@@ -104,6 +104,14 @@ void LogicSystem::RegisterCallBacks() {
 	// 1061 删除单条消息：只给当前用户写删除标记，对方记录不变
 	_fun_callbacks[ID_DELETE_CHAT_MSG_REQ] = std::bind(&LogicSystem::DeleteChatMsg, this,
 		placeholders::_1, placeholders::_2, placeholders::_3);
+	// 1020 修改个人资料
+	_fun_callbacks[ID_UPDATE_USER_INFO_REQ] = std::bind(&LogicSystem::UpdateUserInfo, this,
+		placeholders::_1, placeholders::_2, placeholders::_3);
+	// 1063 好友备注 / 1065 删除好友（单侧）
+	_fun_callbacks[ID_SET_FRIEND_REMARK_REQ] = std::bind(&LogicSystem::SetFriendRemark, this,
+		placeholders::_1, placeholders::_2, placeholders::_3);
+	_fun_callbacks[ID_DELETE_FRIEND_REQ] = std::bind(&LogicSystem::DeleteFriend, this,
+		placeholders::_1, placeholders::_2, placeholders::_3);
 }
 bool LogicSystem::GetBaseInfo(std::string base_key, int uid, std::shared_ptr<UserInfo>& userinfo)
 {
@@ -990,6 +998,126 @@ void LogicSystem::DeleteChatMsg(std::shared_ptr<CSession> session,
 
 	bool ok = MysqlMgr::GetInstance()->DeleteChatMsgForUser(message_id, uid);
 	rtvalue["error"] = ok ? ErrorCodes::Success : ErrorCodes::DELETE_CHAT_MSG_FAILED;
+}
+
+// 1020 修改个人资料：请求 {nick, desc}，回包 {error, uid, nick, desc}。
+// 只改昵称和描述，用户名（登录名/唯一键）保持不动
+void LogicSystem::UpdateUserInfo(std::shared_ptr<CSession> session,
+	const short& msg_id, const string& msg_data)
+{
+	Json::Reader reader;
+	Json::Value root;
+	reader.parse(msg_data, root);
+	auto nick = root["nick"].asString();
+	auto desc = root["desc"].asString();
+	int uid = session->GetUserId();
+
+	Json::Value rtvalue;
+	rtvalue["uid"] = uid;
+	rtvalue["nick"] = nick;
+	rtvalue["desc"] = desc;
+	Defer defer([this, &rtvalue, session]() {
+		std::string return_str = rtvalue.toStyledString();
+		session->Send(return_str, ID_UPDATE_USER_INFO_RSP);
+		});
+
+	// 昵称不能为空；长度按 DB varchar(255) 截断，避免超长 SQL 报错
+	if (uid <= 0 || nick.empty()) {
+		rtvalue["error"] = ErrorCodes::Error_Json;
+		return;
+	}
+	if (nick.size() > 64) {
+		nick.resize(64);
+	}
+	if (desc.size() > 255) {
+		desc.resize(255);
+	}
+
+	bool ok = MysqlMgr::GetInstance()->UpdateUserInfo(uid, nick, desc);
+	if (!ok) {
+		rtvalue["error"] = ErrorCodes::UPDATE_USER_INFO_FAILED;
+		return;
+	}
+
+	// 刷新 Redis 用户缓存：下次登录/好友列表拉取能看到新昵称/描述
+	auto user_info = MysqlMgr::GetInstance()->GetUser(uid);
+	if (user_info != nullptr) {
+		Json::Value redis_root;
+		redis_root["uid"] = uid;
+		redis_root["pwd"] = user_info->pwd;
+		redis_root["name"] = user_info->name;
+		redis_root["email"] = user_info->email;
+		redis_root["nick"] = user_info->nick;
+		redis_root["desc"] = user_info->desc;
+		redis_root["sex"] = user_info->sex;
+		redis_root["icon"] = user_info->icon;
+		RedisMgr::GetInstance()->Set(USER_BASE_INFO + std::to_string(uid),
+			redis_root.toStyledString());
+	}
+
+	rtvalue["error"] = ErrorCodes::Success;
+	rtvalue["nick"] = nick;
+	rtvalue["desc"] = desc;
+}
+
+// 1063 设置好友备注：请求 {friend_uid, remark}。
+// 只写 self_id → friend_id 这一行的 back 列，对方视角不受影响
+void LogicSystem::SetFriendRemark(std::shared_ptr<CSession> session,
+	const short& msg_id, const string& msg_data)
+{
+	Json::Reader reader;
+	Json::Value root;
+	reader.parse(msg_data, root);
+	auto friend_uid = root["friend_uid"].asInt();
+	auto remark = root["remark"].asString();
+	int uid = session->GetUserId();
+
+	Json::Value rtvalue;
+	rtvalue["friend_uid"] = friend_uid;
+	rtvalue["remark"] = remark;
+	Defer defer([this, &rtvalue, session]() {
+		std::string return_str = rtvalue.toStyledString();
+		session->Send(return_str, ID_SET_FRIEND_REMARK_RSP);
+		});
+
+	if (uid <= 0 || friend_uid <= 0 || friend_uid == uid) {
+		rtvalue["error"] = ErrorCodes::Error_Json;
+		return;
+	}
+	if (remark.size() > 255) {
+		remark.resize(255);
+		rtvalue["remark"] = remark;
+	}
+
+	bool ok = MysqlMgr::GetInstance()->UpdateFriendRemark(uid, friend_uid, remark);
+	rtvalue["error"] = ok ? ErrorCodes::Success : ErrorCodes::UPDATE_FRIEND_FAILED;
+}
+
+// 1065 删除好友（单侧）：请求 {friend_uid}。
+// 只删自己这一侧的 friend 行，对方好友列表和历史消息都不受影响
+void LogicSystem::DeleteFriend(std::shared_ptr<CSession> session,
+	const short& msg_id, const string& msg_data)
+{
+	Json::Reader reader;
+	Json::Value root;
+	reader.parse(msg_data, root);
+	auto friend_uid = root["friend_uid"].asInt();
+	int uid = session->GetUserId();
+
+	Json::Value rtvalue;
+	rtvalue["friend_uid"] = friend_uid;
+	Defer defer([this, &rtvalue, session]() {
+		std::string return_str = rtvalue.toStyledString();
+		session->Send(return_str, ID_DELETE_FRIEND_RSP);
+		});
+
+	if (uid <= 0 || friend_uid <= 0 || friend_uid == uid) {
+		rtvalue["error"] = ErrorCodes::Error_Json;
+		return;
+	}
+
+	bool ok = MysqlMgr::GetInstance()->DeleteFriendOneSide(uid, friend_uid);
+	rtvalue["error"] = ok ? ErrorCodes::Success : ErrorCodes::DELETE_FRIEND_FAILED;
 }
 
 // 1035 图片聊天消息：与文本消息"先入库再转发"不同，图片消息只入库+回包，

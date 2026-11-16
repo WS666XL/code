@@ -45,6 +45,18 @@ void ConUserItem::SetInfo(int uid, QString name, QString icon)
      ui->user_name_lb->setText(_info->_name);
 }
 
+void ConUserItem::SetInfo(std::shared_ptr<UserInfo> info)
+{
+    if (!info) {
+        return;
+    }
+    _info = info;
+    ui->icon_lb->setPixmap(LoadAvatarPixmap(
+        ui->icon_lb, info->_icon, ui->icon_lb->size(), info->_uid));
+    ui->icon_lb->setScaledContents(true);
+    ui->user_name_lb->setText(info->DisplayName());
+}
+
 void ConUserItem::SetInfo(std::shared_ptr<AuthRsp> auth_rsp){
     _info = std::make_shared<UserInfo>(auth_rsp);
 

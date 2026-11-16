@@ -18,6 +18,9 @@ enum ErrorCodes {
 	CREATE_CHAT_FAILED = 1012, //创建聊天失败
 	LOAD_CHAT_FAILED = 1013, //加载聊天失败
 	DELETE_CHAT_MSG_FAILED = 1014, //删除单条消息失败
+	UPDATE_USER_INFO_FAILED = 1015, //修改个人资料失败
+	UPDATE_FRIEND_FAILED = 1016,    //修改好友备注失败
+	DELETE_FRIEND_FAILED = 1017,    //删除好友失败
 };
 
 //消息类型：和 chat_message 表的 msg_type 字段对应
@@ -91,6 +94,12 @@ enum MSG_IDS {
 	ID_NOTIFY_AVATAR_UPDATE_REQ = 1057, //头像变更通知（服务端推在线用户，客户端删缓存重新下载）
 	ID_DELETE_CHAT_MSG_REQ = 1061, //删除单条消息请求（只删当前用户视角，落 chat_message_deleted 表）
 	ID_DELETE_CHAT_MSG_RSP = 1062, //删除单条消息回复
+	ID_SET_FRIEND_REMARK_REQ = 1063, //设置好友备注请求（写 friend.back）
+	ID_SET_FRIEND_REMARK_RSP = 1064, //设置好友备注回复
+	ID_DELETE_FRIEND_REQ = 1065,     //删除好友请求（只删自己这一侧）
+	ID_DELETE_FRIEND_RSP = 1066,     //删除好友回复
+	ID_UPDATE_USER_INFO_REQ = 1020,  //修改个人资料请求（昵称/描述）
+	ID_UPDATE_USER_INFO_RSP = 1022,  //修改个人资料回复
 };
 // 用户 IP 前缀，用于拼接用户 IP 对应的 Redis 键，例如：uip_1001
 #define USERIPPREFIX  "uip_"

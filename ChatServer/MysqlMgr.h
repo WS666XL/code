@@ -40,6 +40,15 @@ public:
 	bool DeleteChatMsgForUser(int messageId, int uid) {
 		return _dao.DeleteChatMsgForUser(messageId, uid);
 	}
+	bool UpdateUserInfo(int uid, const std::string& nick, const std::string& desc) {
+		return _dao.UpdateUserInfo(uid, nick, desc);
+	}
+	bool UpdateFriendRemark(int selfId, int friendId, const std::string& remark) {
+		return _dao.UpdateFriendRemark(selfId, friendId, remark);
+	}
+	bool DeleteFriendOneSide(int selfId, int friendId) {
+		return _dao.DeleteFriendOneSide(selfId, friendId);
+	}
 private:
 	MysqlMgr();
 	MysqlDao  _dao;

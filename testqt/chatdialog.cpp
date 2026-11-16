@@ -203,6 +203,65 @@ ChatDialog::ChatDialog(QWidget *parent)
                 }
             });
 
+    //1064 好友备注回包：更新本地好友缓存，刷新标题/会话条目/联系人条目
+    connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_set_friend_remark_rsp,
+            this, [this](int error, int friend_uid, QString remark) {
+                if (error != ErrorCodes::SUCCESS) {
+                    QMessageBox::warning(this, tr("设置备注失败"),
+                        tr("服务端保存好友备注失败，请稍后重试。"));
+                    return;
+                }
+                UserMgr::GetInstance()->SetFriendRemark(friend_uid, remark);
+                ui->chat_page->RefreshFriendDisplay();
+                //已画出来的气泡也要跟着改，否则要切换会话才刷新
+                ui->chat_page->RefreshFriendNameForUid(friend_uid);
+                for (auto it = _chat_thread_items.begin();
+                     it != _chat_thread_items.end(); ++it) {
+                    auto td = UserMgr::GetInstance()->GetChatThreadByThreadId(it.key());
+                    if (td && !td->IsGroup() && td->GetOtherId() == friend_uid) {
+                        RefreshChatListItem(it.key(), td);
+                    }
+                }
+                ui->con_user_list->RefreshFriendInfo(friend_uid);
+            });
+
+    //1066 删除好友回包：移除好友、联系人条目和左侧会话条目
+    connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_delete_friend_rsp,
+            this, [this](int error, int friend_uid) {
+                if (error != ErrorCodes::SUCCESS) {
+                    QMessageBox::warning(this, tr("删除好友失败"),
+                        tr("服务端删除好友失败，请稍后重试。"));
+                    return;
+                }
+
+                const int thread_id = UserMgr::GetInstance()->GetThreadIdByUid(friend_uid);
+                if (thread_id > 0) {
+                    auto it = _chat_thread_items.find(thread_id);
+                    if (it != _chat_thread_items.end()) {
+                        QListWidgetItem* item = it.value();
+                        const int row = ui->chat_user_list->row(item);
+                        if (row >= 0) {
+                            delete ui->chat_user_list->takeItem(row);
+                        }
+                        _chat_thread_items.erase(it);
+                    }
+                    if (_cur_chat_thread_id == thread_id) {
+                        ui->chat_page->ClearChat();
+                        _cur_chat_thread_id = 0;
+                    }
+                    UserMgr::GetInstance()->RemoveChatThreadByOtherUid(friend_uid);
+                }
+
+                UserMgr::GetInstance()->RemoveFriend(friend_uid);
+                ui->con_user_list->RemoveFriend(friend_uid);
+            });
+
+    //1022 修改资料成功：刷新当前聊天页里自己气泡的昵称
+    connect(_user_info_page, &UserInfoPage::sig_user_info_updated,
+            this, [this]() {
+                ui->chat_page->RefreshSelfInfo();
+            });
+
     //add_btn（搜索框旁"+"）：弹出菜单——发起群聊 / 添加好友
     //（该按钮此前只做了样式没有行为，正好作为群聊入口）
     connect(ui->add_btn, &ClickedBtn::clicked, this, [this]() {
@@ -637,6 +696,9 @@ void ChatDialog::slot_add_auth_friend(std::shared_ptr<AuthInfo> auth_info) {
     qDebug() << "receive slot_add_auth__friend uid is " << auth_info->_uid
              << " name is " << auth_info->_name << " nick is " << auth_info->_nick;
 
+    //好友关系已建立/已存在：清掉申请记录，之后重新加好友不会被 AlreadyApply 挡住
+    UserMgr::GetInstance()->RemoveApply(auth_info->_uid);
+
     //判断如果已经是好友则跳过
     auto bfriend = UserMgr::GetInstance()->CheckFriendById(auth_info->_uid);
     if(bfriend){
@@ -687,6 +749,10 @@ void ChatDialog::slot_auth_rsp(std::shared_ptr<AuthRsp> auth_rsp)
     // 同意好友完成，"新的朋友"未读红点随之熄灭（必须在提前 return 之前，保证每次回包都熄灭）
     ui->side_contact_lb->ShowRedPoint(false);
     ui->con_user_list->ShowRedPoint(false);
+
+    //已经处理过的申请先移除：即使双方本来还是好友（重新加好友场景），
+    //也要清掉这条 pending，否则下次再加会被 AlreadyApply 挡住
+    UserMgr::GetInstance()->RemoveApply(auth_rsp->_uid);
 
     //判断如果已经是好友则跳过
     auto bfriend = UserMgr::GetInstance()->CheckFriendById(auth_rsp->_uid);
@@ -975,12 +1041,24 @@ void ChatDialog::slot_load_chat_thread(bool load_more, int last_thread_id,
 void ChatDialog::slot_create_private_chat(int /*uid*/, int other_id, int thread_id)
     //uid 本版用不到（回包按 other_id 建会话），形参留名会报 -Wunused-parameter
 {
-    auto* chat_user_wid = new ChatUserWid();
-    auto chat_thread_data = std::make_shared<ChatThreadData>(other_id, thread_id, 0);
-    if (chat_thread_data == nullptr) {
+    // 会话已经存在（比如重新加好友时自己这一侧本来就没删过）：
+    // 直接选中现成会话，不能再用空 ChatThreadData 覆盖缓存，否则历史会丢
+    auto existing = UserMgr::GetInstance()->GetChatThreadByThreadId(thread_id);
+    auto existing_item = _chat_thread_items.find(thread_id);
+    if (existing && existing_item != _chat_thread_items.end()) {
+        ui->side_chat_lb->SetSelected(true);
+        SetSelectChatItem(thread_id);
+        SetSelectChatPage(thread_id);
+        slot_side_chat();
         return;
     }
-    UserMgr::GetInstance()->AddChatThreadData(chat_thread_data, other_id);
+
+    auto* chat_user_wid = new ChatUserWid();
+    std::shared_ptr<ChatThreadData> chat_thread_data = existing;
+    if (!chat_thread_data) {
+        chat_thread_data = std::make_shared<ChatThreadData>(other_id, thread_id, 0);
+        UserMgr::GetInstance()->AddChatThreadData(chat_thread_data, other_id);
+    }
 
     chat_user_wid->SetChatData(chat_thread_data);
     QListWidgetItem* item = new QListWidgetItem;
@@ -995,6 +1073,16 @@ void ChatDialog::slot_create_private_chat(int /*uid*/, int other_id, int thread_
     //更新聊天界面信息
     SetSelectChatPage(thread_id);
     slot_side_chat();
+
+    //重新加好友/新建私聊：线程可能在数据库里已有历史消息，
+    //定向发 1029 补拉一次，否则重新加回来会话是空的
+    _pending_history_thread_id = thread_id;
+    QJsonObject hisObj;
+    hisObj["thread_id"] = thread_id;
+    hisObj["message_id"] = 0;
+    QJsonDocument hisDoc(hisObj);
+    emit TcpMgr::GetInstance()->sig_send_data(
+        ReqId::ID_LOAD_CHAT_MSG_REQ, hisDoc.toJson(QJsonDocument::Compact));
     return;
 }
 
@@ -1002,10 +1090,47 @@ void ChatDialog::slot_create_private_chat(int /*uid*/, int other_id, int thread_
 //1. 消息装进当前会话缓存并刷新"最后一条"游标；
 //2. load_more=true 继续翻当前会话的历史；
 //3. 当前会话加载完 → GetNextLoadData 走下一个会话；全部加载完关蒙层并选中第一项
-void ChatDialog::slot_load_chat_msg(int /*thread_id*/, int msg_id, bool load_more,
+void ChatDialog::slot_load_chat_msg(int thread_id, int msg_id, bool load_more,
     std::vector<std::shared_ptr<ChatDataBase>> msglists)
-    //thread_id 本版用不到（要加载的会话直接从 _cur_load_chat 拿），形参留名会报 -Wunused-parameter
 {
+    // ===== 定向补拉（重新加好友/新建私聊）=====
+    // 与登录预加载分开处理：只往目标 thread 里塞消息，不推进 _cur_load_chat
+    if (_pending_history_thread_id > 0 && thread_id == _pending_history_thread_id) {
+        auto chat = UserMgr::GetInstance()->GetChatThreadByThreadId(thread_id);
+        if (chat) {
+            chat->SetLastMsgId(msg_id);
+            for (auto& m : msglists) {
+                chat->AppendMsg(m->GetMsgId(), m);
+            }
+
+            if (load_more) {
+                // 还有更早的历史，继续拉当前 thread 的下一页
+                QJsonObject obj;
+                obj["thread_id"] = _pending_history_thread_id;
+                obj["message_id"] = msg_id;
+                QJsonDocument doc(obj);
+                emit TcpMgr::GetInstance()->sig_send_data(
+                    ReqId::ID_LOAD_CHAT_MSG_REQ, doc.toJson(QJsonDocument::Compact));
+                return;
+            }
+
+            const int thread_id = _pending_history_thread_id;
+            _pending_history_thread_id = 0;
+            RefreshChatListItem(thread_id, chat);
+            if (_cur_chat_thread_id == thread_id) {
+                ui->chat_page->SetChatData(chat);
+            }
+        }
+        else {
+            _pending_history_thread_id = 0;
+        }
+        return;
+    }
+
+    //没有正在预加载的会话（例如定向补拉之外的意外回包）：直接忽略，避免空指针
+    if (!_cur_load_chat) {
+        return;
+    }
     _cur_load_chat->SetLastMsgId(msg_id);
     //装载历史消息（AppendMsg 顺带刷新会话的"最后一条消息"显示）
     for (auto& chat_msg : msglists) {

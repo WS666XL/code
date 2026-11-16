@@ -27,8 +27,9 @@ void FriendInfoPage::SetInfo(std::shared_ptr<UserInfo> user_info)
     ui->icon_lb->setScaledContents(true);
 
     ui->name_lb->setText(user_info->_name);
-    ui->nick_lb->setText(user_info->_nick);
-    ui->bak_lb->setText(user_info->_nick);
+    //昵称修改已移除：昵称行直接显示用户名，备注行显示自己设置的备注
+    ui->nick_lb->setText(user_info->_name);
+    ui->bak_lb->setText(user_info->_remark);
 }
 
 void FriendInfoPage::on_msg_chat_clicked()

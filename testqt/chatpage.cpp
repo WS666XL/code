@@ -31,6 +31,7 @@
 #include<QMenu>
 #include<QAction>
 #include<QCursor>
+#include<QInputDialog>
 
 ChatPage::ChatPage(QWidget *parent)
     : QWidget(parent)
@@ -68,6 +69,21 @@ ChatPage::ChatPage(QWidget *parent)
         [this](const QString&, ClickLbState) {
             ToggleEmojiPanel();
         });
+
+    // 标题右侧"..."：私聊里提供"设置备注 / 删除好友"（群里隐藏）
+    _more_btn = new QToolButton(this);
+    _more_btn->setText(QStringLiteral("⋯"));
+    _more_btn->setToolTip(tr("更多"));
+    _more_btn->setAutoRaise(true);
+    _more_btn->setCursor(Qt::PointingHandCursor);
+    _more_btn->setFixedSize(28, 28);
+    _more_btn->setStyleSheet(
+        "QToolButton{border:none;font-size:18px;color:#555;}"
+        "QToolButton:hover{background:#e9eef5;border-radius:4px;}");
+    _more_btn->hide();
+    ui->horizontalLayout_6->addStretch();
+    ui->horizontalLayout_6->addWidget(_more_btn, 0, Qt::AlignRight);
+    connect(_more_btn, &QToolButton::clicked, this, &ChatPage::ShowFriendMenu);
 
     //下载完成：执行该文件名对应的刷新回调（图片气泡换真图 / 文件卡片切"点击打开"）
     connect(FileTcpMgr::GetInstance().get(), &FileTcpMgr::sig_file_downloaded,
@@ -222,6 +238,47 @@ void ChatPage::AttachTransferContext(QWidget* bubble, const QString& name, bool 
     }
 }
 
+// 标题右侧"..."：好友备注 / 删除好友。
+// 设置备注弹输入框，保存后由 ChatDialog 处理 1064 回包并刷新界面
+void ChatPage::ShowFriendMenu()
+{
+    if (!_chat_data || _chat_data->IsGroup()) {
+        return;
+    }
+
+    const int friend_uid = _chat_data->GetOtherId();
+    auto friend_info = UserMgr::GetInstance()->GetFriendById(friend_uid);
+    const QString display_name = friend_info ? friend_info->DisplayName()
+                                             : QString::number(friend_uid);
+
+    QMenu menu(this);
+    QAction* remark_action = menu.addAction(QStringLiteral("设置备注"));
+    QAction* delete_action = menu.addAction(QStringLiteral("删除好友"));
+    QAction* chosen = menu.exec(QCursor::pos());
+
+    if (chosen == remark_action) {
+        bool ok = false;
+        const QString old_remark = friend_info ? friend_info->_remark : QString();
+        const QString remark = QInputDialog::getText(
+            this, QStringLiteral("设置备注"), QStringLiteral("备注名："),
+            QLineEdit::Normal, old_remark, &ok);
+        if (ok) {
+            TcpMgr::GetInstance()->SetFriendRemark(friend_uid, remark.trimmed());
+        }
+        return;
+    }
+
+    if (chosen == delete_action) {
+        const auto ret = QMessageBox::question(
+            this, QStringLiteral("删除好友"),
+            QStringLiteral("确定删除好友「%1」吗？").arg(display_name),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (ret == QMessageBox::Yes) {
+            TcpMgr::GetInstance()->DeleteFriend(friend_uid);
+        }
+    }
+}
+
 // 右键气泡：弹"删除"菜单。气泡本身不知道消息 id，
 // 所以创建气泡时把对应的 ChatDataBase 捕获进 lambda
 void ChatPage::AttachDeleteMenu(QWidget* bubble, std::shared_ptr<ChatDataBase> msg)
@@ -285,22 +342,22 @@ void ChatPage::DeleteChatMsg(std::shared_ptr<ChatDataBase> msg)
     }
 }
 
-// 群聊里一条消息该显示谁的昵称：
-// - 自己：优先 nick，没填则 name
-// - 好友：优先 nick，没填则 name
+// 消息气泡该显示谁的名字：
+// - 自己：显示用户名
+// - 好友：备注 > 用户名
 // - 非好友（大群里其他成员）：客户端没有资料，兜底显示 uid，至少不会丢气泡
 QString ChatPage::DisplayNameForUid(int uid)
 {
     auto self_info = UserMgr::GetInstance()->GetUserInfo();
-    const bool is_group = _chat_data && _chat_data->IsGroup();
     if (self_info && self_info->_uid == uid) {
-        return (is_group && !self_info->_nick.isEmpty()) ? self_info->_nick : self_info->_name;
+        //昵称修改已移除：自己的气泡统一显示用户名
+        return self_info->_name;
     }
 
     auto friend_info = UserMgr::GetInstance()->GetFriendById(uid);
     if (friend_info) {
-        return (is_group && !friend_info->_nick.isEmpty())
-                   ? friend_info->_nick : friend_info->_name;
+        //备注 > 用户名
+        return friend_info->DisplayName();
     }
     return QString::number(uid);
 }
@@ -447,24 +504,17 @@ ChatPage::~ChatPage()
 void ChatPage::SetChatData(std::shared_ptr<ChatThreadData> chat_data) {
     _chat_data = chat_data;
     if (!_chat_data) {
+        ui->title_lb->clear();
+        if (_more_btn) {
+            _more_btn->hide();
+        }
         return;
     }
 
-    // day41：群会话标题显示"群名(成员数)"；私聊显示对方昵称/uid
-    if (_chat_data->IsGroup()) {
-        ui->title_lb->setText(QString("%1(%2)").arg(_chat_data->GetGroupName())
-                              .arg(_chat_data->GetMemberCount()));
-    }
-    else {
-        auto other_id = _chat_data->GetOtherId();
-        auto friend_info = UserMgr::GetInstance()->GetFriendById(other_id);
-        //对方资料查不到：标题显示 uid 兜底，消息照常画
-        if (friend_info == nullptr) {
-            ui->title_lb->setText(QString::number(other_id));
-        }
-        else {
-            ui->title_lb->setText(friend_info->_name);
-        }
+    RefreshFriendDisplay();
+    //群聊不显示好友备注/删除好友菜单
+    if (_more_btn) {
+        _more_btn->setVisible(!_chat_data->IsGroup());
     }
 
     clearItems();
@@ -475,6 +525,94 @@ void ChatPage::SetChatData(std::shared_ptr<ChatThreadData> chat_data) {
     //未回执的消息也要画出来（rsp=false：按 unique_id 挂到未回执表，等 1018 回来改状态）
     for (auto& msg : _chat_data->GetMsgUnRspRef()) {
         AppendChatMsg(msg,false);
+    }
+}
+
+//好友备注变化后刷新聊天页标题：备注 > 昵称 > 用户名
+void ChatPage::RefreshFriendDisplay()
+{
+    if (!_chat_data) {
+        return;
+    }
+    if (_chat_data->IsGroup()) {
+        ui->title_lb->setText(QString("%1(%2)").arg(_chat_data->GetGroupName())
+                              .arg(_chat_data->GetMemberCount()));
+        return;
+    }
+
+    const int other_id = _chat_data->GetOtherId();
+    auto friend_info = UserMgr::GetInstance()->GetFriendById(other_id);
+    ui->title_lb->setText(friend_info ? friend_info->DisplayName()
+                                      : QString::number(other_id));
+}
+
+//好友备注变化后，把当前会话里"对方发的"气泡名字刷新一遍。
+//不刷的话标题/列表已经变成备注名，但已经画出来的气泡还停在旧名字（要切会话重画才变）
+void ChatPage::RefreshFriendNameForUid(int uid)
+{
+    if (!_chat_data) {
+        return;
+    }
+    const QString display_name = DisplayNameForUid(uid);
+    for (auto& msg : _chat_data->GetMsgMapRef()) {
+        if (msg->GetSendUid() != uid) {
+            continue;
+        }
+        auto it = _base_item_map.find(msg->GetMsgId());
+        if (it != _base_item_map.end()) {
+            it.value()->setUserName(display_name);
+        }
+    }
+    for (auto& msg : _chat_data->GetMsgUnRspRef()) {
+        if (msg->GetSendUid() != uid) {
+            continue;
+        }
+        auto it = _unrsp_item_map.find(msg->GetUniqueId());
+        if (it != _unrsp_item_map.end()) {
+            it.value()->setUserName(display_name);
+        }
+    }
+}
+
+//自己的昵称/资料变化后，把当前会话里"自己发的"气泡名字刷新一遍
+void ChatPage::RefreshSelfInfo()
+{
+    if (!_chat_data) {
+        return;
+    }
+    auto self_info = UserMgr::GetInstance()->GetUserInfo();
+    if (!self_info) {
+        return;
+    }
+
+    for (auto& msg : _chat_data->GetMsgMapRef()) {
+        if (msg->GetSendUid() != self_info->_uid) {
+            continue;
+        }
+        auto it = _base_item_map.find(msg->GetMsgId());
+        if (it != _base_item_map.end()) {
+            it.value()->setUserName(DisplayNameForUid(self_info->_uid));
+        }
+    }
+    for (auto& msg : _chat_data->GetMsgUnRspRef()) {
+        if (msg->GetSendUid() != self_info->_uid) {
+            continue;
+        }
+        auto it = _unrsp_item_map.find(msg->GetUniqueId());
+        if (it != _unrsp_item_map.end()) {
+            it.value()->setUserName(DisplayNameForUid(self_info->_uid));
+        }
+    }
+}
+
+//删除好友后清空聊天页；会话缓存由 ChatDialog 统一移除
+void ChatPage::ClearChat()
+{
+    clearItems();
+    _chat_data.reset();
+    ui->title_lb->clear();
+    if (_more_btn) {
+        _more_btn->hide();
     }
 }
 
@@ -622,6 +760,10 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
                 need_download = true;
             }
             auto* pic_bubble = new PictureBubble(pic, role);
+            //记录本地路径：传输完成后单击图片可全屏预览/另存为
+            if (!local_path.isEmpty() && QFileInfo::exists(local_path)) {
+                pic_bubble->setLocalPath(local_path);
+            }
             AttachTransferContext(pic_bubble, msg_info->_unique_name, is_self);
             pChatItem->setWidget(pic_bubble);
             if (need_download) {
@@ -635,6 +777,7 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
                         + "/chatimg/" + QString::number(sender_uid)
                         + "/" + msg_info->_unique_name;
                     if (QFileInfo::exists(local_path)) {
+                        pic_bubble->setLocalPath(local_path);
                         pic_bubble->setPicture(QPixmap(local_path));
                     }
                 };
@@ -856,8 +999,10 @@ void ChatPage::on_send_btn_clicked()
                 // 发送方和接收方都走 PictureBubble 同一套 160×90 等比缩放，
                 // 两边气泡尺寸才能一致（之前发送方小、接收方大就是这个原因）
                 QPixmap full_pix(msg_info->content);
-                bubble = new PictureBubble(
+                auto* pic_bubble = new PictureBubble(
                     full_pix.isNull() ? msgList[i].pixmap : full_pix, role);
+                pic_bubble->setLocalPath(msg_info->content);
+                bubble = pic_bubble;
             }
             pChatItem->setWidget(bubble);
             //挂断点续传上下文（点暂停/继续时按 unique_name 找回上传任务），

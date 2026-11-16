@@ -2,7 +2,18 @@
 #include <QLabel>
 #include <QTimer>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 #include <QMouseEvent>
+#include <QDialog>
+#include <QPushButton>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QFile>
+#include <QDir>
+#include <QMessageBox>
+#include <QGuiApplication>
+#include <QScreen>
+#include <QCursor>
 
 
 #define PIC_MAX_WIDTH 160
@@ -161,7 +172,7 @@ void PictureBubble::refreshProgressText()
     }
 }
 
-//传输中点击图片切换暂停/继续；其他状态不拦截点击（保持原有行为）
+//传输中点击图片切换暂停/继续；传输完成后单击打开全屏预览
 void PictureBubble::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton && !_unique_name.isEmpty()) {
@@ -178,5 +189,91 @@ void PictureBubble::mousePressEvent(QMouseEvent* event)
             return;
         }
     }
+
+    // 已完成/空闲：单击预览（本地文件存在时才可用）
+    if (event->button() == Qt::LeftButton && !_local_path.isEmpty()
+        && QFileInfo::exists(_local_path)
+        && (_state == TransferState::Completed || _state == TransferState::None)) {
+        ShowPreview();
+        return;
+    }
     BubbleFrame::mousePressEvent(event);
+}
+
+//全屏预览：黑底、图片等比缩放到屏幕大小，顶部提供"另存为"和"关闭"
+void PictureBubble::ShowPreview()
+{
+    if (_local_path.isEmpty() || !QFileInfo::exists(_local_path)) {
+        return;
+    }
+
+    QDialog preview(this);
+    preview.setWindowTitle(QStringLiteral("图片预览"));
+    preview.setStyleSheet("QDialog{background:#000000;}");
+
+    auto* layout = new QVBoxLayout(&preview);
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(8);
+
+    auto* bar = new QHBoxLayout();
+    bar->addStretch();
+    auto* save_btn = new QPushButton(QStringLiteral("另存为"), &preview);
+    auto* close_btn = new QPushButton(QStringLiteral("关闭"), &preview);
+    const QString btn_style =
+        "QPushButton{background:#333;color:#fff;border:1px solid #555;"
+        "border-radius:4px;padding:5px 14px;}"
+        "QPushButton:hover{background:#444;}";
+    save_btn->setStyleSheet(btn_style);
+    close_btn->setStyleSheet(btn_style);
+    bar->addWidget(save_btn);
+    bar->addWidget(close_btn);
+    layout->addLayout(bar);
+
+    auto* image_lb = new QLabel(&preview);
+    image_lb->setAlignment(Qt::AlignCenter);
+    QScreen* screen = QGuiApplication::screenAt(QCursor::pos());
+    const QSize avail = screen ? screen->availableGeometry().size() : QSize(1280, 720);
+    QPixmap pix(_local_path);
+    if (!pix.isNull()) {
+        // 预览最大占屏幕宽高的一半，等比缩放：
+        // 大图不会一打开就铺满屏幕，小图也会放大到合适尺寸
+        const QSize target(int(avail.width() * 0.5), int(avail.height() * 0.5));
+        image_lb->setPixmap(pix.scaled(
+            target, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    }
+    layout->addWidget(image_lb, 1);
+
+    connect(close_btn, &QPushButton::clicked, &preview, &QDialog::reject);
+    connect(save_btn, &QPushButton::clicked, &preview, [this, &preview]() {
+        const QString default_name = QFileInfo(_local_path).fileName();
+        const QString path = QFileDialog::getSaveFileName(
+            &preview, QStringLiteral("另存为"),
+            QDir::homePath() + "/" + default_name,
+            QStringLiteral("图片文件 (*.png *.jpg *.jpeg *.bmp *.webp)"));
+        if (path.isEmpty()) {
+            return;
+        }
+        // 选的是原文件本身：直接当作保存成功，不能先 remove 再 copy 把自己删了
+        if (QFileInfo(path).absoluteFilePath()
+            == QFileInfo(_local_path).absoluteFilePath()) {
+            return;
+        }
+        if (QFile::exists(path)) {
+            QFile::remove(path);
+        }
+        // 优先直接复制原始文件（不重新编码）；失败再退回 QPixmap::save
+        bool ok = QFile::copy(_local_path, path);
+        if (!ok) {
+            QPixmap save_pix(_local_path);
+            ok = !save_pix.isNull() && save_pix.save(path);
+        }
+        if (!ok) {
+            QMessageBox::warning(&preview, QStringLiteral("保存失败"),
+                QStringLiteral("图片另存为失败，请检查目标路径权限。"));
+        }
+    });
+
+    // 不再全屏显示：窗口按图片尺寸自适应，居中弹出
+    preview.adjustSize();
+    preview.exec();
 }

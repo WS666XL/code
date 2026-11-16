@@ -56,8 +56,7 @@ void CreateGroupDlg::loadFriendList()
 {
     auto friends = UserMgr::GetInstance()->GetFriendListSnapshot();
     for (auto& friend_info : friends) {
-        auto* item = new QListWidgetItem(friend_info->_nick.isEmpty()
-                                         ? friend_info->_name : friend_info->_nick);
+        auto* item = new QListWidgetItem(friend_info->DisplayName());
         item->setData(Qt::UserRole, friend_info->_uid);
         _friend_list->addItem(item);
     }

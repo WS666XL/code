@@ -2,6 +2,7 @@
 #include "usermgr.h"
 #include "global.h"
 #include "filetcpmgr.h"
+#include "tcpmgr.h"
 #include "imagecropperdialog.h"
 #include "imagecropperlabel.h"
 
@@ -37,18 +38,34 @@ UserInfoPage::UserInfoPage(QWidget *parent)
     // 加载当前头像（默认头像或已上传的本地文件）
     LoadHeadFromLocal();
 
-    // 本轮资料只读展示：从 UserMgr 取值填充，拿不到（未登录/空指针）就留空兜底
-    QString name, nick, desc;
+    // 用户名只读，描述可编辑；昵称编辑已移除
+    QString name, desc;
     if (auto user_info = UserMgr::GetInstance()->GetUserInfo()) {
         name = user_info->_name;
-        nick = user_info->_nick;
         desc = user_info->_desc;
     }
     name_ed->setText(name);
-    nick_ed->setText(nick);
     desc_ed->setText(desc);
 
     connect(up_btn, &QPushButton::clicked, this, &UserInfoPage::slot_up_load);
+    connect(save_btn, &QPushButton::clicked, this, &UserInfoPage::slot_save_info);
+
+    // 1022 修改资料回包：成功则更新本地 UserMgr/输入框，并通知 ChatDialog 刷气泡昵称
+    connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_update_user_info_rsp,
+        this, [this](int error, QString nick, QString desc) {
+            save_btn->setEnabled(true);
+            if (error != ErrorCodes::SUCCESS) {
+                QMessageBox::warning(this, tr("保存失败"),
+                    tr("个人资料保存失败，错误码 %1").arg(error));
+                return;
+            }
+
+            desc_ed->setText(desc);
+            UserMgr::GetInstance()->UpdateSelfInfo(nick, desc);
+            emit sig_user_info_updated();
+            QMessageBox::information(this, tr("保存成功"),
+                tr("描述已更新。"));
+        });
 
     // 头像入库确认：服务端最后一块落盘并更新 MySQL user.icon / Redis 缓存后
     // 才回的 1032（trans_size==total_size），收到即说明服务器已持久化
@@ -102,13 +119,13 @@ void UserInfoPage::InitUi()
     content_layout->addLayout(head_layout);
     content_layout->addSpacing(20);
 
-    // 三行资料输入框（只读 QLineEdit：既和老师 ui 的控件类型一致，
-    // 又明确告诉用户"这里当前不能改"，不用假按钮制造可提交的错觉）
-    auto make_row = [this, &content_layout](const QString& label_text) {
+    // 两行资料输入框：用户名（登录名/唯一键）只读，描述可编辑。
+    // 昵称编辑已按需求移除，界面显示名统一用用户名/好友备注
+    auto make_row = [this, &content_layout](const QString& label_text, bool editable) {
         auto* lb = new QLabel(label_text, this);
         auto* ed = new QLineEdit(this);
         ed->setFixedSize(200, 30);
-        ed->setReadOnly(true);
+        ed->setReadOnly(!editable);
         auto* row = new QHBoxLayout();
         row->addWidget(lb);
         row->addWidget(ed);
@@ -116,9 +133,14 @@ void UserInfoPage::InitUi()
         content_layout->addLayout(row);
         return ed;
     };
-    nick_ed = make_row(QStringLiteral("昵称： "));
-    name_ed = make_row(QStringLiteral("用户名:"));
-    desc_ed = make_row(QStringLiteral("描述:  "));
+    name_ed = make_row(QStringLiteral("用户名:"), false);
+    desc_ed = make_row(QStringLiteral("描述:  "), true);
+
+    // 保存按钮：提交昵称/描述到 ChatServer（1020/1022）
+    save_btn = new QPushButton(QStringLiteral("保存"), this);
+    save_btn->setFixedSize(120, 30);
+    content_layout->addSpacing(12);
+    content_layout->addWidget(save_btn, 0, Qt::AlignHCenter);
 
     content_layout->addStretch();
 }
@@ -167,6 +189,18 @@ QPixmap UserInfoPage::MakeRoundPixmap(const QPixmap& src)
 
 // 上传头像（老师 userinfopage.cpp slot_up_load 同名槽，接上服务器上传链路）：
 // 选图 → 裁剪 → 显示 → 存本地 → 发 1031 上传 → 同步 _icon → 发 sig_reset_head()
+// 保存描述：1020 请求（协议仍要求带 nick，这里原样回传当前昵称，不再允许修改）
+void UserInfoPage::slot_save_info()
+{
+    auto user_info = UserMgr::GetInstance()->GetUserInfo();
+    if (!user_info) {
+        return;
+    }
+
+    save_btn->setEnabled(false);
+    TcpMgr::GetInstance()->UpdateUserInfo(user_info->_nick, desc_ed->text().trimmed());
+}
+
 void UserInfoPage::slot_up_load()
 {
     // 1. 选图（webp 也放行，QPixmap 装了 imageformats 插件就能解码）
