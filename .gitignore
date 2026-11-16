@@ -1,0 +1,20 @@
+# CMake 构建产物
+build/
+
+# 客户端构建产物（qmake 输出，config.ini 会被复制进去）
+bin/
+
+# qmake/make 编译中间产物
+*.o
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+.qmake.stash
+Makefile
+
+# 日志文件
+*.log
+
+# 老师参考代码（独立仓库，不纳入本项目）
+llfcchat/
