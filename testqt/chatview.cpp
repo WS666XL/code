@@ -57,6 +57,19 @@ void ChatView::insertChatItem(QWidget *before, QWidget *item)
 
 }
 
+void ChatView::removeChatItem(QWidget *item)
+{
+    if (!item) {
+        return;
+    }
+    QVBoxLayout *layout = qobject_cast<QVBoxLayout *>(m_pScrollArea->widget()->layout());
+    if (!layout) {
+        return;
+    }
+    layout->removeWidget(item);
+    item->deleteLater();
+}
+
 void ChatView::removeAllItem()
 {
     QVBoxLayout *layout = qobject_cast<QVBoxLayout *>(m_pScrollArea->widget()->layout());

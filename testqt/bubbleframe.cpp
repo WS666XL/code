@@ -1,5 +1,6 @@
 #include "bubbleframe.h"
 #include<QPainter>
+#include<QContextMenuEvent>
 
 
 
@@ -26,6 +27,13 @@ void BubbleFrame::setWidget(QWidget *w)
     else{
         m_pHLayout->addWidget(w);
     }
+}
+void BubbleFrame::contextMenuEvent(QContextMenuEvent* event)
+{
+    // 不在气泡里直接弹菜单：气泡不知道自己是哪条消息，
+    // 统一发信号给 ChatPage，由它按消息 id 找到缓存并删除
+    emit sig_delete_requested();
+    event->accept();
 }
 void BubbleFrame::paintEvent(QPaintEvent *e)
 {

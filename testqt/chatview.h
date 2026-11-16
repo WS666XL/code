@@ -18,6 +18,7 @@ public:
     void appendChatItem(QWidget *item);                 //尾插：插到末尾（发新消息用这个）
     void prependChatItem(QWidget *item);                //头插：插到最前面（往上翻历史消息用，还没实现）
     void insertChatItem(QWidget *before, QWidget *item);//中间插：插到某个控件之前（还没实现）
+    void removeChatItem(QWidget *item);                  //删除单条消息气泡
      void removeAllItem();
 protected:
     bool eventFilter(QObject *o, QEvent *e) override;  // 鼠标移进/移出滚动区，控制滚动条显隐

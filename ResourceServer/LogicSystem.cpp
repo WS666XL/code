@@ -8,6 +8,20 @@
 #include <json/value.h>
 #include <json/reader.h>
 
+namespace {
+	//上传进度 key：uid|md5。带 uid 是为了隔离不同用户上传同一份文件（md5 相同）时的进度；
+	//1003 通用上传没有身份字段，uid=0 即可
+	std::string UploadProgressKey(int uid, const std::string& md5) {
+		return std::to_string(uid) + "|" + md5;
+	}
+
+	//下载进度 key：owner_uid|name。不同用户的头像都叫 head.png，
+	//只按文件名存 Redis 会互相覆盖，必须带上所有者 uid
+	std::string DownloadProgressKey(int owner_uid, const std::string& name) {
+		return std::to_string(owner_uid) + "|" + name;
+	}
+}
+
 LogicWorker::LogicWorker() :_b_stop(false)
 {
 	RegisterCallBacks();
@@ -98,6 +112,7 @@ void LogicWorker::RegisterCallBacks()
 			Json::Reader reader;
 			Json::Value root;
 			reader.parse(msg_data, root);
+			auto md5 = root["md5"].asString();
 			auto seq = root["seq"].asInt();
 			auto name = root["name"].asString();
 			auto total_size = root["total_size"].asInt();
@@ -109,6 +124,48 @@ void LogicWorker::RegisterCallBacks()
 				std::string return_str = rtvalue.toStyledString();
 				session->Send(return_str, ID_UPLOAD_FILE_RSP);
 				});
+			// 先填公共字段：中途 return 的错误回包也要带 md5/name/seq，
+			// 客户端才能找回上传上下文并自动从第 1 块重传
+			rtvalue["md5"] = md5;
+			rtvalue["name"] = name;
+			rtvalue["seq"] = seq;
+			rtvalue["total_size"] = total_size;
+			rtvalue["trans_size"] = trans_size;
+			rtvalue["last"] = last;
+
+			// ===== day38 断点续传：每块都把进度写进 Redis =====
+			// 客户端暂停/断线后再发 1005，就能从这里读到"传到第几块、多少字节"，
+			// 然后 seek 到该偏移继续传，不用从头再来
+			std::string progress_key = UploadProgressKey(0, md5);
+			if (!md5.empty()) {
+				if (seq == 1) {
+					auto file_info = std::make_shared<FileInfo>();
+					file_info->_file_path_str = (ConfigMgr::Inst().GetFileOutPath() / name).string();
+					file_info->_name = name;
+					file_info->_seq = seq;
+					file_info->_total_size = total_size;
+					file_info->_trans_size = trans_size;
+					if (!RedisMgr::GetInstance()->SetFileInfo(progress_key, file_info)) {
+						rtvalue["error"] = ErrorCodes::FileSaveRedisFailed;
+						return;
+					}
+				}
+				else {
+					auto file_info = RedisMgr::GetInstance()->GetFileInfo(progress_key);
+					if (file_info == nullptr) {
+						// 没有进度记录说明这次续传接不上（Redis 过期/服务换过），
+						// 让客户端回 FileNotExists 后从头传
+						rtvalue["error"] = ErrorCodes::FileNotExists;
+						return;
+					}
+					file_info->_seq = seq;
+					file_info->_trans_size = trans_size;
+					if (!RedisMgr::GetInstance()->SetFileInfo(progress_key, file_info)) {
+						rtvalue["error"] = ErrorCodes::FileSaveRedisFailed;
+						return;
+					}
+				}
+			}
 
 			// 按 std::hash(文件名) % FILE_WORKER_COUNT 选择文件线程：
 			// 同名文件的所有分块都在同一线程串行写盘，保证顺序
@@ -117,11 +174,10 @@ void LogicWorker::RegisterCallBacks()
 			int index = hash_value % FILE_WORKER_COUNT;
 			std::cout << "Hash value: " << hash_value << std::endl;
 
-			FileSystem::GetInstance()->PostMsgToQue(
-				std::make_shared<FileTask>(session, ID_UPLOAD_FILE_REQ, name, seq, total_size,
-					trans_size, last, file_data, 0),
-				index
-			);
+			auto task = std::make_shared<FileTask>(session, ID_UPLOAD_FILE_REQ, name, seq, total_size,
+				trans_size, last, file_data, 0);
+			task->_md5 = md5;
+			FileSystem::GetInstance()->PostMsgToQue(task, index);
 
 			rtvalue["error"] = ErrorCodes::Success;
 			rtvalue["total_size"] = total_size;
@@ -129,6 +185,48 @@ void LogicWorker::RegisterCallBacks()
 			rtvalue["name"] = name;
 			rtvalue["trans_size"] = trans_size;
 			rtvalue["last"] = last;
+			rtvalue["md5"] = md5;
+	};
+
+	// 1005 同步上传进度（day38 断点续传）：客户端点"继续"时先问服务器传到哪了。
+	// 请求 {md5, name, uid, token}，回包 {error, md5, name, seq, trans_size, total_size}。
+	// 客户端拿到 seq/trans_size 后把本地文件 seek 到 trans_size，从 seq+1 继续发
+	_fun_callbacks[ID_SYNC_FILE_REQ] = [this](shared_ptr<CSession> session, const short& msg_id,
+		const string& msg_data) {
+			Json::Reader reader;
+			Json::Value root;
+			reader.parse(msg_data, root);
+			auto md5 = root["md5"].asString();
+			auto name = root["name"].asString();
+			auto uid = root["uid"].asInt();
+
+			Json::Value rtvalue;
+			Defer defer([this, &rtvalue, session]() {
+				std::string return_str = rtvalue.toStyledString();
+				session->Send(return_str, ID_SYNC_FILE_RSP);
+				});
+
+			rtvalue["md5"] = md5;
+			rtvalue["uid"] = uid;
+			rtvalue["name"] = name;
+
+			if (md5.empty()) {
+				rtvalue["error"] = ErrorCodes::Error_Json;
+				return;
+			}
+
+			auto file_info = RedisMgr::GetInstance()->GetFileInfo(UploadProgressKey(uid, md5));
+			if (file_info == nullptr) {
+				// 进度不存在（超时/服务重启/已完成清理）：客户端会从第 1 块重传
+				rtvalue["error"] = ErrorCodes::FileNotExists;
+				return;
+			}
+
+			rtvalue["error"] = ErrorCodes::Success;
+			rtvalue["name"] = file_info->_name;
+			rtvalue["seq"] = file_info->_seq;
+			rtvalue["trans_size"] = static_cast<int>(file_info->_trans_size);
+			rtvalue["total_size"] = static_cast<int>(file_info->_total_size);
 	};
 
 	// 1031 上传头像分块：与 1003 的差别——
@@ -136,8 +234,7 @@ void LogicWorker::RegisterCallBacks()
 	//    防止未登录的人往别人目录里塞文件（老师版 day39 同款校验）
 	// 2. 回包时机不同：1003 解析完立即回 1004（不等落盘），1031 要等 FileWorker
 	//    落盘（最后一块还要更新 DB/Redis）后才回 1032，所以回包逻辑包在 callback 里
-	// 3. 老师版首块还会往 Redis 写 FileInfo 做断点续传（day38 内容），
-	//    本版没做断点续传，跳过该步，只保留 token 校验
+	// 3. 每块都把进度写 Redis（key=uid|md5），支持暂停/断线后续传
 	_fun_callbacks[ID_UPLOAD_HEAD_ICON_REQ] = [this](shared_ptr<CSession> session, const short& msg_id,
 		const string& msg_data) {
 			Json::Reader reader;
@@ -211,6 +308,57 @@ void LogicWorker::RegisterCallBacks()
 				}
 			}
 
+			// ===== day38 断点续传：每块都写 Redis 进度（key=uid|md5）=====
+			if (!md5.empty()) {
+				std::string progress_key = UploadProgressKey(uid, md5);
+				std::string uid_str = std::to_string(uid);
+				auto file_path = ConfigMgr::Inst().GetFileOutPath();
+				if (seq == 1) {
+					auto file_info = std::make_shared<FileInfo>();
+					file_info->_file_path_str = (file_path / uid_str / name).string();
+					file_info->_name = name;
+					file_info->_seq = seq;
+					file_info->_total_size = total_size;
+					file_info->_trans_size = trans_size;
+					if (!RedisMgr::GetInstance()->SetFileInfo(progress_key, file_info)) {
+						Json::Value rtvalue;
+						rtvalue["error"] = ErrorCodes::FileSaveRedisFailed;
+						rtvalue["md5"] = md5;
+						rtvalue["seq"] = seq;
+						rtvalue["name"] = name;
+						rtvalue["uid"] = uid;
+						session->Send(rtvalue.toStyledString(), ID_UPLOAD_HEAD_ICON_RSP);
+						return;
+					}
+				}
+				else {
+					auto file_info = RedisMgr::GetInstance()->GetFileInfo(progress_key);
+					if (file_info == nullptr) {
+						// 进度丢失：让客户端从第 1 块重传（客户端收到 FileNotExists 会重置）
+						Json::Value rtvalue;
+						rtvalue["error"] = ErrorCodes::FileNotExists;
+						rtvalue["md5"] = md5;
+						rtvalue["seq"] = seq;
+						rtvalue["name"] = name;
+						rtvalue["uid"] = uid;
+						session->Send(rtvalue.toStyledString(), ID_UPLOAD_HEAD_ICON_RSP);
+						return;
+					}
+					file_info->_seq = seq;
+					file_info->_trans_size = trans_size;
+					if (!RedisMgr::GetInstance()->SetFileInfo(progress_key, file_info)) {
+						Json::Value rtvalue;
+						rtvalue["error"] = ErrorCodes::FileSaveRedisFailed;
+						rtvalue["md5"] = md5;
+						rtvalue["seq"] = seq;
+						rtvalue["name"] = name;
+						rtvalue["uid"] = uid;
+						session->Send(rtvalue.toStyledString(), ID_UPLOAD_HEAD_ICON_RSP);
+						return;
+					}
+				}
+			}
+
 			//与 1003 相同：按文件名哈希选 FileWorker，
 			//同一头像（同名文件）的所有分块落到同一线程串行落盘
 			std::hash<std::string> hash_fn;
@@ -222,15 +370,18 @@ void LogicWorker::RegisterCallBacks()
 
 			auto task = std::make_shared<FileTask>(session, ID_UPLOAD_HEAD_ICON_REQ, name, seq,
 				total_size, trans_size, last, file_data, uid);
+			task->_md5 = md5;
 			task->_callback = callback;
 			FileSystem::GetInstance()->PostMsgToQue(task, index);
 	};
 
-	// 1033 下载文件（头像回显链路）：客户端本地没有对方的头像文件时发起。
-	// 请求 {name(文件名), seq, token, uid(请求者), owner_uid(文件所有者), client_path(客户端保存路径)}
+	// 1033 下载文件（头像/聊天图片/聊天文件共用）。
+	// 请求 {name, seq, token, uid(请求者), owner_uid(文件所有者), client_path(客户端保存路径)}
 	// 回包 {error, data(base64分块), seq, total_size, current_size, is_last, name, client_path}
-	// 老师版把下载放 FileWorker 是为了配合 day38 断点续传（Redis 存 FileInfo 定位路径），
-	// 本版精简：请求直接带 owner_uid 拼路径，读文件是很快的同步 IO，LogicWorker 直接处理即可
+	//
+	// day38 断点续传：读取动作交给 DownloadWorker（按文件名哈希选线程），
+	// 由它把"下一块序号/已下载字节数"写 Redis。客户端暂停/断线后带着本地 .tmp 的
+	// 偏移重新请求 seq=N，服务器能判断序号是否接得上，接不上就让客户端从 1 重下。
 	_fun_callbacks[ID_DOWN_LOAD_FILE_REQ] = [this](shared_ptr<CSession> session, const short& msg_id,
 		const string& msg_data) {
 			Json::Reader reader;
@@ -243,15 +394,15 @@ void LogicWorker::RegisterCallBacks()
 			auto owner_uid = root["owner_uid"].asInt();
 			auto client_path = root["client_path"].asString();
 
-			//回包公共字段用 Defer 兜底发送（handler 中途 return 也不会漏发）
-			Json::Value rtvalue;
-			rtvalue["name"] = name;
-			rtvalue["client_path"] = client_path;
-			rtvalue["seq"] = seq;
-			Defer defer([this, &rtvalue, session]() {
-				std::string return_str = rtvalue.toStyledString();
-				session->Send(return_str, ID_DOWN_LOAD_FILE_RSP);
-				});
+			// 失败回包：把定位字段一并带回，客户端靠 client_path 找回下载上下文
+			auto send_error = [session, name, client_path, seq](int err) {
+				Json::Value rtvalue;
+				rtvalue["error"] = err;
+				rtvalue["name"] = name;
+				rtvalue["client_path"] = client_path;
+				rtvalue["seq"] = seq;
+				session->Send(rtvalue.toStyledString(), ID_DOWN_LOAD_FILE_RSP);
+			};
 
 			//登录态校验：防止任何人凭文件名扫描下载他人文件
 			if (seq == 1) {
@@ -259,11 +410,11 @@ void LogicWorker::RegisterCallBacks()
 				std::string token_value = "";
 				bool success = RedisMgr::GetInstance()->Get(token_key, token_value);
 				if (!success) {
-					rtvalue["error"] = ErrorCodes::UidInvalid;
+					send_error(ErrorCodes::UidInvalid);
 					return;
 				}
 				if (token_value != token) {
-					rtvalue["error"] = ErrorCodes::TokenInvalid;
+					send_error(ErrorCodes::TokenInvalid);
 					return;
 				}
 			}
@@ -273,48 +424,41 @@ void LogicWorker::RegisterCallBacks()
 			if (name.empty() || name.find('/') != std::string::npos
 				|| name.find("\\") != std::string::npos
 				|| name.find("..") != std::string::npos) {
-				rtvalue["error"] = ErrorCodes::FileNotExists;
+				send_error(ErrorCodes::FileNotExists);
+				return;
+			}
+			if (seq < 1) {
+				send_error(ErrorCodes::FileSeqInvalid);
 				return;
 			}
 
 			auto file_path = ConfigMgr::Inst().GetFileOutPath();
 			auto file_path_str = (file_path / std::to_string(owner_uid) / name).string();
 
+			// 先做一次存在性检查，省得把注定失败的请求投进下载线程
 			std::ifstream infile(file_path_str, std::ios::binary);
 			if (!infile) {
 				std::cerr << "download file not exists: " << file_path_str << std::endl;
-				rtvalue["error"] = ErrorCodes::FileNotExists;
+				send_error(ErrorCodes::FileNotExists);
 				return;
 			}
-
-			//定位到 (seq-1)*FILE_CHUNK_LEN 偏移读一块——与上传的 32KB 分块对称
-			infile.seekg(0, std::ios::end);
-			std::streamsize total_size = infile.tellg();
-			std::streamsize offset = (std::streamsize)(seq - 1) * FILE_CHUNK_LEN;
-			if (offset >= total_size) {
-				rtvalue["error"] = ErrorCodes::FileNotExists;
-				return;
-			}
-			infile.seekg(offset);
-
-			char buffer[FILE_CHUNK_LEN];
-			infile.read(buffer, FILE_CHUNK_LEN);
-			std::streamsize bytes_read = infile.gcount();
 			infile.close();
 
-			if (bytes_read <= 0) {
-				rtvalue["error"] = ErrorCodes::FileReadFailed;
-				return;
-			}
+			std::string download_key = DownloadProgressKey(owner_uid, name);
+			// 回调在 DownloadWorker 线程里执行：session->Send 内部有锁，跨线程安全
+			auto callback = [session, name, client_path, seq](const Json::Value& result) {
+				Json::Value rtvalue = result;
+				rtvalue["name"] = name;
+				rtvalue["client_path"] = client_path;
+				rtvalue["seq"] = seq;
+				session->Send(rtvalue.toStyledString(), ID_DOWN_LOAD_FILE_RSP);
+			};
 
-			//读出的分块 base64 编码后回给客户端
-			std::string data_to_encode(buffer, bytes_read);
-			rtvalue["data"] = base64_encode(data_to_encode);
-			std::streamsize current_pos = offset + bytes_read;
-			rtvalue["total_size"] = std::to_string(total_size);
-			rtvalue["current_size"] = std::to_string(current_pos);
-			rtvalue["is_last"] = (current_pos >= total_size);
-			rtvalue["error"] = ErrorCodes::Success;
+			auto task = std::make_shared<DownloadTask>(
+				download_key, file_path_str, name, seq, callback);
+			std::hash<std::string> hash_fn;
+			int index = hash_fn(name) % DOWN_LOAD_WORKER_COUNT;
+			FileSystem::GetInstance()->PostDownloadTaskToQue(task, index);
 	};
 
 	// 1037 上传聊天图片分块：客户端在 1035（图片消息入库拿到 message_id）之后
@@ -345,6 +489,16 @@ void LogicWorker::RegisterCallBacks()
 				std::string return_str = rtvalue.toStyledString();
 				session->Send(return_str, ID_IMG_CHAT_UPLOAD_RSP);
 				});
+			// 公共字段先填：错误回包也要带 name/md5/seq，客户端据此找回上传上下文
+			rtvalue["md5"] = md5;
+			rtvalue["name"] = name;
+			rtvalue["seq"] = seq;
+			rtvalue["total_size"] = total_size;
+			rtvalue["trans_size"] = trans_size;
+			rtvalue["last"] = last;
+			rtvalue["message_id"] = message_id;
+			rtvalue["sender"] = sender;
+			rtvalue["receiver"] = receiver;
 
 			//首块校验登录态（与 1031 同款校验）
 			if (seq == 1) {
@@ -361,6 +515,38 @@ void LogicWorker::RegisterCallBacks()
 				}
 			}
 
+			// ===== day38 断点续传：每块都写 Redis 进度（key=发送者uid|md5）=====
+			// 与 1031 同款：暂停/断线后客户端发 1005 就能拿回续传起点
+			if (!md5.empty()) {
+				std::string progress_key = UploadProgressKey(sender, md5);
+				if (seq == 1) {
+					auto file_info = std::make_shared<FileInfo>();
+					file_info->_file_path_str = (ConfigMgr::Inst().GetFileOutPath()
+						/ std::to_string(sender) / name).string();
+					file_info->_name = name;
+					file_info->_seq = seq;
+					file_info->_total_size = total_size;
+					file_info->_trans_size = trans_size;
+					if (!RedisMgr::GetInstance()->SetFileInfo(progress_key, file_info)) {
+						rtvalue["error"] = ErrorCodes::FileSaveRedisFailed;
+						return;
+					}
+				}
+				else {
+					auto file_info = RedisMgr::GetInstance()->GetFileInfo(progress_key);
+					if (file_info == nullptr) {
+						rtvalue["error"] = ErrorCodes::FileNotExists;
+						return;
+					}
+					file_info->_seq = seq;
+					file_info->_trans_size = trans_size;
+					if (!RedisMgr::GetInstance()->SetFileInfo(progress_key, file_info)) {
+						rtvalue["error"] = ErrorCodes::FileSaveRedisFailed;
+						return;
+					}
+				}
+			}
+
 			//按文件名哈希选 FileWorker：同一图片的所有分块串行落盘（保证顺序）
 			std::hash<std::string> hash_fn;
 			size_t hash_value = hash_fn(name);
@@ -368,6 +554,7 @@ void LogicWorker::RegisterCallBacks()
 
 			auto task = std::make_shared<FileTask>(session, ID_IMG_CHAT_UPLOAD_REQ, name, seq,
 				total_size, trans_size, last, file_data, sender);
+			task->_md5 = md5;
 			//1037 专属：消息 id（落盘完更新状态用）+ 收图人（查节点推通知用）
 			task->_chat_msg_id = message_id;
 			task->_receiver = receiver;
@@ -379,6 +566,7 @@ void LogicWorker::RegisterCallBacks()
 			rtvalue["name"] = name;
 			rtvalue["trans_size"] = trans_size;
 			rtvalue["last"] = last;
+			rtvalue["md5"] = md5;
 			rtvalue["message_id"] = message_id;
 			rtvalue["sender"] = sender;
 			rtvalue["receiver"] = receiver;

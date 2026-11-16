@@ -17,6 +17,13 @@ TextBubble::TextBubble(ChatRole role, const QString &text, QWidget *parent)
     m_pTextEdit->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_pTextEdit->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_pTextEdit->installEventFilter(this);
+    // QTextEdit 自带右键菜单（复制/全选）会吞掉右键事件，导致气泡收不到。
+    // 改成自定义菜单策略，把右键转发给 BubbleFrame 的删除请求
+    m_pTextEdit->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_pTextEdit, &QTextEdit::customContextMenuRequested, this,
+        [this](const QPoint&) {
+            emit sig_delete_requested();
+        });
     QFont font("Microsoft YaHei");
     font.setPointSize(12);
     m_pTextEdit->setFont(font);

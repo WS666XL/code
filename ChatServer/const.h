@@ -17,6 +17,7 @@ enum ErrorCodes {
 	UidInvalid = 1011,  //uid无效
 	CREATE_CHAT_FAILED = 1012, //创建聊天失败
 	LOAD_CHAT_FAILED = 1013, //加载聊天失败
+	DELETE_CHAT_MSG_FAILED = 1014, //删除单条消息失败
 };
 
 //消息类型：和 chat_message 表的 msg_type 字段对应
@@ -88,6 +89,8 @@ enum MSG_IDS {
 	ID_CREATE_GROUP_REQ = 1055,   //建群请求（发起人选好友成群，老师体系未用 1050+ 段）
 	ID_CREATE_GROUP_RSP = 1056,   //建群回复（带回 thread_id 和群名）
 	ID_NOTIFY_AVATAR_UPDATE_REQ = 1057, //头像变更通知（服务端推在线用户，客户端删缓存重新下载）
+	ID_DELETE_CHAT_MSG_REQ = 1061, //删除单条消息请求（只删当前用户视角，落 chat_message_deleted 表）
+	ID_DELETE_CHAT_MSG_RSP = 1062, //删除单条消息回复
 };
 // 用户 IP 前缀，用于拼接用户 IP 对应的 Redis 键，例如：uip_1001
 #define USERIPPREFIX  "uip_"

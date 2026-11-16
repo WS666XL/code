@@ -767,7 +767,8 @@ bool MysqlDao::GetGroupMembers(int thread_id, std::vector<int>& member_uids)
 }
 
 // 按 thread_id 分页拉历史消息：message_id > lastId 正序翻页，多取一条判断 load_more
-std::shared_ptr<PageResult> MysqlDao::LoadChatMsg(int thread_id, int last_message_id, int page_size)
+std::shared_ptr<PageResult> MysqlDao::LoadChatMsg(int thread_id, int last_message_id,
+	int page_size, int uid)
 {
 	auto con = pool_->getConnection();
 	if (!con) {
@@ -781,13 +782,19 @@ std::shared_ptr<PageResult> MysqlDao::LoadChatMsg(int thread_id, int last_messag
 	try {
 		auto page_res = std::make_shared<PageResult>();
 		page_res->load_more = false;
+		// 排除当前用户删除过的消息：删除只影响自己视角，
+		// 对方的历史记录/未读状态不受影响（类似微信"删除"而不是"撤回"）
 		const std::string sql = R"(
-        SELECT message_id, thread_id, sender_id, recv_id, content,
-               created_at, updated_at, status, msg_type
-        FROM chat_message
-        WHERE thread_id = ?
-          AND message_id > ?
-        ORDER BY message_id ASC
+        SELECT cm.message_id, cm.thread_id, cm.sender_id, cm.recv_id, cm.content,
+               cm.created_at, cm.updated_at, cm.status, cm.msg_type
+        FROM chat_message cm
+        WHERE cm.thread_id = ?
+          AND cm.message_id > ?
+          AND NOT EXISTS (
+              SELECT 1 FROM chat_message_deleted d
+              WHERE d.message_id = cm.message_id AND d.uid = ?
+          )
+        ORDER BY cm.message_id ASC
         LIMIT ?
 		)";
 
@@ -797,7 +804,8 @@ std::shared_ptr<PageResult> MysqlDao::LoadChatMsg(int thread_id, int last_messag
 			);
 		pstmt->setInt(1, thread_id);
 		pstmt->setInt(2, last_message_id);
-		pstmt->setInt(3, fetch_limit);
+		pstmt->setInt(3, uid);
+		pstmt->setInt(4, fetch_limit);
 
 		auto rs = std::unique_ptr<sql::ResultSet>(pstmt->executeQuery());
 
@@ -833,6 +841,34 @@ std::shared_ptr<PageResult> MysqlDao::LoadChatMsg(int thread_id, int last_messag
 		return nullptr;
 	}
 	return nullptr;
+}
+
+// 删除单条消息（仅当前用户视角）：写一条删除标记。
+// 用 INSERT IGNORE 保证重复删除幂等；历史加载时通过 NOT EXISTS 过滤掉
+bool MysqlDao::DeleteChatMsgForUser(int message_id, int uid)
+{
+	auto con = pool_->getConnection();
+	if (!con) {
+		return false;
+	}
+	Defer defer([this, &con]() {
+		pool_->returnConnection(std::move(con));
+		});
+	auto& conn = con->_con;
+
+	try {
+		const std::string sql =
+			"INSERT IGNORE INTO chat_message_deleted(message_id, uid) VALUES(?, ?)";
+		std::unique_ptr<sql::PreparedStatement> pstmt(conn->prepareStatement(sql));
+		pstmt->setInt64(1, message_id);
+		pstmt->setInt(2, uid);
+		pstmt->executeUpdate();
+		return true;
+	}
+	catch (sql::SQLException& e) {
+		std::cerr << "SQLException in DeleteChatMsgForUser: " << e.what() << std::endl;
+		return false;
+	}
 }
 
 // 批量插入聊天消息，插入后用 LAST_INSERT_ID() 回填自增 message_id（事务保证原子性）

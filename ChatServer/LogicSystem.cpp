@@ -96,6 +96,14 @@ void LogicSystem::RegisterCallBacks() {
 		placeholders::_1, placeholders::_2, placeholders::_3);
 	_fun_callbacks[ID_CREATE_GROUP_REQ] = std::bind(&LogicSystem::DealCreateGroup, this,
 		placeholders::_1, placeholders::_2, placeholders::_3);
+	// 1035 图片/文件聊天消息：先入库拿 message_id 回 1036，
+	// 客户端拿到 message_id 后才发 1037 把文件传到资源服务器。
+	// 少了这个注册，客户端会一直等 1036，图片气泡卡在 0% 且收方收不到任何消息
+	_fun_callbacks[ID_IMG_CHAT_MSG_REQ] = std::bind(&LogicSystem::DealChatImgMsg, this,
+		placeholders::_1, placeholders::_2, placeholders::_3);
+	// 1061 删除单条消息：只给当前用户写删除标记，对方记录不变
+	_fun_callbacks[ID_DELETE_CHAT_MSG_REQ] = std::bind(&LogicSystem::DeleteChatMsg, this,
+		placeholders::_1, placeholders::_2, placeholders::_3);
 }
 bool LogicSystem::GetBaseInfo(std::string base_key, int uid, std::shared_ptr<UserInfo>& userinfo)
 {
@@ -442,7 +450,9 @@ void LogicSystem::LoadChatMsg(std::shared_ptr<CSession> session,
 		});
 
 	int page_size = 10;
-	std::shared_ptr<PageResult> res = MysqlMgr::GetInstance()->LoadChatMsg(thread_id, message_id, page_size);
+	// 带上当前 uid：把自己删除过的消息过滤掉
+	std::shared_ptr<PageResult> res = MysqlMgr::GetInstance()->LoadChatMsg(
+		thread_id, message_id, page_size, session->GetUserId());
 	if (!res) {
 		rtvalue["error"] = ErrorCodes::LOAD_CHAT_FAILED;
 		return;
@@ -954,6 +964,34 @@ void LogicSystem::DealChatTextMsg(std::shared_ptr<CSession> session, const short
 	ChatGrpcClient::GetInstance()->NotifyTextChatMsg(to_ip_value, text_msg_req, rtvalue);
 }
 
+// 1061 删除单条消息：请求 {message_id}，回包 {error, message_id}。
+// 只影响当前登录用户自己的历史记录（写 chat_message_deleted），
+// 不删除 chat_message 原行，也不通知对方，语义是"删除"而不是"撤回"
+void LogicSystem::DeleteChatMsg(std::shared_ptr<CSession> session,
+	const short& msg_id, const string& msg_data)
+{
+	Json::Reader reader;
+	Json::Value root;
+	reader.parse(msg_data, root);
+	auto message_id = root["message_id"].asInt();
+
+	Json::Value rtvalue;
+	rtvalue["message_id"] = message_id;
+	Defer defer([this, &rtvalue, session]() {
+		std::string return_str = rtvalue.toStyledString();
+		session->Send(return_str, ID_DELETE_CHAT_MSG_RSP);
+		});
+
+	int uid = session->GetUserId();
+	if (message_id <= 0 || uid <= 0) {
+		rtvalue["error"] = ErrorCodes::Error_Json;
+		return;
+	}
+
+	bool ok = MysqlMgr::GetInstance()->DeleteChatMsgForUser(message_id, uid);
+	rtvalue["error"] = ok ? ErrorCodes::Success : ErrorCodes::DELETE_CHAT_MSG_FAILED;
+}
+
 // 1035 图片聊天消息：与文本消息"先入库再转发"不同，图片消息只入库+回包，
 // 不在这里通知对方——收图通知（1039）由资源服务器在图片文件全部落盘后
 // 通过 gRPC NotifyChatImgMsg 反向触发（老师版设计：保证对方收到通知时图片可下载）。
@@ -1013,7 +1051,11 @@ void LogicSystem::DealChatImgMsg(std::shared_ptr<CSession> session, const short&
 	MysqlMgr::GetInstance()->AddChatMsg(chat_datas);
 
 	rtvalue["message_id"] = chat_msg->message_id;
-	rtvalue["status"] = chat_msg->status;
+	// 回包状态给 2（已送达），与文本消息 1018 的 UI 语义保持一致：
+	// 图片消息此时已入库、服务端已接受，发送方气泡应显示绿色勾，而不是未读灰圈。
+	// 注意 DB 里仍然写 0（资源未传完），由资源服务器在 1037 落盘完成后改成 2，
+	// 历史记录重新加载时读到的就是 2
+	rtvalue["status"] = 2;   //2=已送达（与文本消息状态码一致）
 
 	Defer defer([this, &rtvalue, session]() {
 		std::string return_str = rtvalue.toStyledString();

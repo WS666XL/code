@@ -13,7 +13,9 @@
 #include "userinfopage.h"   // day36：用户信息页（设置入口）
 #include "filetcpmgr.h"     // day39：图片聊天上传（slot_chat_img_rsp 里发起 1037）
 #include "creategroupdlg.h" // day41：发起群聊对话框
+#include "chatpage.h"
 #include <QMenu>
+#include <QMessageBox>
 ChatDialog::ChatDialog(QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::ChatDialog),_mode(ChatUIMode::ChatMode),_state(ChatUIMode::ChatMode),_b_loading(false),
@@ -181,6 +183,24 @@ ChatDialog::ChatDialog(QWidget *parent)
     connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_avatar_updated,
             this, [this](int uid, const QString& /*icon*/) {
                 ui->chat_page->RefreshAvatarForUid(uid);
+            });
+
+    //删除单条消息：聊天页本地删完后，同步刷新左侧会话条目的最后一条内容/时间
+    connect(ui->chat_page, &ChatPage::sig_chat_msg_deleted, this,
+            [this](int thread_id) {
+                auto data = UserMgr::GetInstance()->GetChatThreadByThreadId(thread_id);
+                if (data) {
+                    RefreshChatListItem(thread_id, data);
+                }
+            });
+
+    //1062 删除回包：失败时提示（服务端没记上，重新登录后消息会回来）
+    connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_delete_chat_msg_rsp,
+            this, [this](int error, int /*message_id*/) {
+                if (error != ErrorCodes::SUCCESS) {
+                    QMessageBox::warning(this, tr("删除失败"),
+                        tr("服务端删除消息失败，重新登录后这条消息可能还会出现。"));
+                }
             });
 
     //add_btn（搜索框旁"+"）：弹出菜单——发起群聊 / 添加好友
@@ -416,10 +436,17 @@ void ChatDialog::RefreshChatListItem(int thread_id, std::shared_ptr<ChatThreadDa
 void ChatDialog::slot_chat_img_rsp(int thread_id, std::shared_ptr<ImgChatData> chat_data)
 {
     auto thread_data = UserMgr::GetInstance()->GetChatThreadByThreadId(thread_id);
+    bool accepted = true;
     if (thread_data) {
         //按 unique_id 把未回执区的消息挪进正式缓存（与文本消息 1018 回执同款）
-        thread_data->MoveMsg(chat_data);
+        accepted = thread_data->MoveMsg(chat_data);
         RefreshChatListItem(thread_id, thread_data);
+    }
+
+    if (!accepted) {
+        // 未回执阶段就被用户删了：服务端已入库，补一条删除标记，也不再上传文件
+        TcpMgr::GetInstance()->DeleteChatMsg(chat_data->GetMsgId());
+        return;
     }
 
     if (_cur_chat_thread_id == thread_id) {
@@ -855,7 +882,11 @@ void ChatDialog::slot_add_chat_msg(int thread_id, std::vector<std::shared_ptr<Te
 
     //将消息放入会话缓存中管理
     for (auto& msg : msglists) {
-        chat_data->MoveMsg(msg);
+        if (!chat_data->MoveMsg(msg)) {
+            //未回执阶段已被用户删除：服务端已入库，补删除标记，不再更新界面
+            TcpMgr::GetInstance()->DeleteChatMsg(msg->GetMsgId());
+            continue;
+        }
 
         if (_cur_chat_thread_id != thread_id) {
             continue;

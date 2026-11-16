@@ -2,9 +2,11 @@
 #define CHATPAGE_H
 
 #include <QWidget>
+#include <QDate>
 #include"userdata.h"
 #include <QMap>
 #include <QHash>
+#include <QPointer>
 namespace Ui {
 // 前向声明：由 uic 根据 chatpage.ui 自动生成
 class ChatPage;
@@ -23,6 +25,10 @@ class ChatItemBase;
 class ChatPage : public QWidget
 {
     Q_OBJECT
+
+signals:
+    //删除了一条消息：通知 ChatDialog 刷新左侧会话条目的最后消息/时间
+    void sig_chat_msg_deleted(int thread_id);
 
 public:
     explicit ChatPage(QWidget *parent = nullptr);
@@ -45,6 +51,19 @@ private slots:
     void on_send_btn_clicked();  // 点发送按钮：取出输入框里的消息，生成气泡并打包发给服务器
 private:
     void clearItems();           // 清空消息列表和状态记录
+    //给图片/文件气泡挂上断点续传上下文：记录 unique_name、上传/下载方向，
+    //并把气泡的暂停/继续按钮接到 FileTcpMgr 对应接口
+    void AttachTransferContext(QWidget* bubble, const QString& name, bool is_upload);
+    //表情面板：点笑脸弹出/收起，点表情插入到输入框光标处
+    void ToggleEmojiPanel();
+    //群聊里显示发送者昵称：好友取 nick（没有则 name），非好友兜底 uid
+    QString DisplayNameForUid(int uid);
+    //按消息日期在聊天页插入"今天/昨天/更早日期"分隔条
+    void MaybeAppendDateSeparator(const QString& chat_time);
+    //右键气泡弹"删除"菜单：msg 用于删缓存、发 1061 服务端标记
+    void AttachDeleteMenu(QWidget* bubble, std::shared_ptr<ChatDataBase> msg);
+    //删除单条消息：先从页面/本地缓存移除，再发 1061 落服务端删除标记
+    void DeleteChatMsg(std::shared_ptr<ChatDataBase> msg);
     Ui::ChatPage *ui;      // 界面对象
     std::shared_ptr<ChatThreadData> _chat_data;  // 当前会话
     //管理未回复（还没收到回执）的消息气泡：key 是本地 unique_id
@@ -57,6 +76,16 @@ private:
     QHash<QString, std::function<void()>> _download_done_map;
     //下载失败的清理回调：key 是唯一文件名（值通常是空操作或恢复失败态）
     QHash<QString, std::function<void()>> _download_fail_map;
+    //上传中的气泡：key 是唯一文件名，value 是图片/文件气泡控件。
+    //1038 回执驱动上传进度，按名字找回气泡刷进度条；QPointer 保证
+    //切换会话/气泡销毁后不会悬空访问
+    QHash<QString, QPointer<QWidget>> _upload_bubbles;
+    //下载中的气泡：key 是唯一文件名，1034 下载进度按名字找回气泡刷进度/切暂停态
+    QHash<QString, QPointer<QWidget>> _download_bubbles;
+    //表情面板（懒创建，第一次点笑脸时构造，之后复用）
+    QPointer<QWidget> _emoji_panel;
+    //上一条消息的日期：用于判断是否需要插入新的日期分隔条
+    QDate _last_sep_date;
 };
 
 #endif // CHATPAGE_H

@@ -186,10 +186,13 @@ public:
 		const std::vector<int>& member_uids, int& thread_id);
 	// 拉群成员 uid 列表（群消息转发时遍历用）
 	bool GetGroupMembers(int thread_id, std::vector<int>& member_uids);
-	// 按 thread_id 分页拉取历史消息，lastId 为上页最后一条 message_id
-	std::shared_ptr<PageResult> LoadChatMsg(int threadId, int lastId, int pageSize);
+	// 按 thread_id 分页拉取历史消息，lastId 为上页最后一条 message_id。
+	// uid 用于排除该用户自己删除过的消息（"删除"只影响自己视角，不动别人的记录）
+	std::shared_ptr<PageResult> LoadChatMsg(int threadId, int lastId, int pageSize, int uid);
 	// 批量插入聊天消息，插入后回填自增 message_id
 	bool AddChatMsg(std::vector<std::shared_ptr<ChatMessage>>& chat_datas);
+	// 删除单条消息（仅当前用户视角）：写 chat_message_deleted，历史加载时过滤
+	bool DeleteChatMsgForUser(int messageId, int uid);
 private:
 	std::unique_ptr<MySqlPool> pool_;
 };

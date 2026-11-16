@@ -34,15 +34,35 @@ private:
 	std::unordered_map<short, std::function<void(std::shared_ptr<FileTask>)>> _handlers;
 };
 
-//文件系统单例：持有 FILE_WORKER_COUNT 个 FileWorker，
-//按文件名哈希把任务分发下去（同名文件串行写，不同文件并行写）
+//下载线程：按 seq 从源文件读一块并 base64 编码回包。
+//每条边的进度（seq/trans_size）写 Redis：客户端暂停/断线后带着已下载的偏移
+//再请求 seq=N 时，服务器能判断这个序号是否接得上，接不上就让它从 1 重新下
+class DownloadWorker
+{
+public:
+	DownloadWorker();
+	~DownloadWorker();
+	void PostTask(std::shared_ptr<DownloadTask> task);
+private:
+	void task_callback(std::shared_ptr<DownloadTask> task);
+	std::thread _work_thread;
+	std::queue<std::shared_ptr<DownloadTask>> _task_que;
+	std::atomic<bool> _b_stop;
+	std::mutex  _mtx;
+	std::condition_variable _cv;
+};
+
+//文件系统单例：持有 FILE_WORKER_COUNT 个 FileWorker + DOWN_LOAD_WORKER_COUNT 个 DownloadWorker，
+//按文件名哈希把任务分发下去（同名文件串行处理，不同文件并行）
 class FileSystem :public Singleton<FileSystem>
 {
 	friend class Singleton<FileSystem>;
 public:
 	~FileSystem();
 	void PostMsgToQue(shared_ptr<FileTask> msg, int index);
+	void PostDownloadTaskToQue(std::shared_ptr<DownloadTask> msg, int index);
 private:
 	FileSystem();
 	std::vector<std::shared_ptr<FileWorker>>  _file_workers;
+	std::vector<std::shared_ptr<DownloadWorker>> _download_workers;
 };

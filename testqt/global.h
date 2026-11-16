@@ -9,6 +9,7 @@
 #include<QJsonObject>    // 构造请求体/解析回包用的 JSON 对象
 #include<QDir>           // 拼路径、转换路径分隔符
 #include<QSettings>      // 读写 config.ini 这类配置文件
+#include<QSet>           // 上传拥塞窗口：记录已发未回执/已回执的分块序号
 // 全局函数指针：让某个控件重新套用一次样式表。
 // 为什么要手动刷？Qt 对 setProperty() 设置的自定义属性不敏感，
 // 改了属性后 QSS 里 [state="xx"] 这类选择器不会自动生效，
@@ -64,6 +65,8 @@ enum ReqId{
     ID_CREATE_GROUP_REQ = 1055,      //建群请求（发起人选好友成群；老师体系未用 1050+ 段）
     ID_CREATE_GROUP_RSP = 1056,      //建群回复（带回 thread_id/群名/成员列表）
     ID_NOTIFY_AVATAR_UPDATE_REQ = 1057, //头像变更通知（服务端推在线用户，客户端删缓存重新下载回显）
+    ID_DELETE_CHAT_MSG_REQ = 1061,   //删除单条消息（只删自己视角，落 chat_message_deleted）
+    ID_DELETE_CHAT_MSG_RSP = 1062,   //删除单条消息回包
 };
 
 // 统一错误码：网络层和业务层共用一套编号，便于判断成功与否
@@ -136,19 +139,48 @@ enum class ChatMsgType {
     VIDEO = 2, //视频
     FILE = 3   //文件
 };
+
+//传输方向：气泡上的"暂停/继续"要知道该操作上传还是下载
+enum class TransferType {
+    None,
+    Upload,
+    Download
+};
+
+//传输状态：与老师版 day40 一致，进度条文字/暂停按钮都按它切换
+enum class TransferState {
+    None,          //空闲（历史消息/已完成后再无动作）
+    Uploading,     //上传中
+    Downloading,   //下载中
+    Paused,        //已暂停（点继续后走 1005 同步进度 / 1033 续块）
+    Completed,     //完成
+    Failed         //失败（可重试）
+};
 struct MsgInfo{
     QString msgFlag;//"text,image,file"
     QString content;//图片消息=本地文件路径（上传用），文本消息=文字内容
     QPixmap pixmap;//文件和图片的缩略图
 
     // ===== 图片/文件消息专用字段（day39 图片聊天 / day41 文件聊天）=====
-    QString _md5;           //文件 MD5（随协议带，本版不做秒传/续传，先保留）
+    QString _md5;           //文件 MD5（秒传判断 + 断点续传进度 key，服务端 key=uid|md5）
     QString _unique_name;   //上传后的唯一文件名（uuid+原后缀），落盘/下载/历史记录都用它
     QString _file_name;     //原始文件名（文件卡片显示用；图片消息为空）
     qint64 _total_size = 0; //文件字节数（1035 请求与占位气泡用）
     int _msg_id = 0;        //服务端 chat_message.message_id（1036 回包回填）
     int _sender = 0;        //发送者 uid
     int _receiver = 0;      //接收者 uid
+
+    // ===== 上传拥塞窗口状态（day40：1037 每块回执驱动滑窗续发）=====
+    qint64 _seq = 0;                  // 已发出的最大分块序号（0 表示还没发）
+    qint64 _max_seq = 0;              // 总分块数 = ceil(total_size / MAX_FILE_LEN)
+    qint64 _rsp_size = 0;             // 服务端已确认收到的字节数（进度条用）
+    QSet<int> _flighting_seqs;        // 已发但还没回 1038 的分块
+    QSet<int> _rsp_seqs;              // 已收到 1038 的分块
+    int _last_confirmed_seq = 0;      // 从 1 开始连续确认到的最大序号
+
+    // ===== day38 断点续传状态 =====
+    TransferState _transfer_state = TransferState::None;  //上传/下载中、暂停等
+    TransferType _transfer_type = TransferType::None;     //这份资源当前在传哪个方向
 };
 //申请好友标签输入框最低长度
 const int MIN_APPLY_LABEL_ED_LEN = 40;
@@ -204,4 +236,9 @@ const int CHAT_COUNT_PER_PAGE=12;
 #define FILE_UPLOAD_LEN_LEN 4
 //最大文件长度（每块 32KB，base64 编码后约 44KB，资源服务器接受）
 #define MAX_FILE_LEN (1024*32)
+//上传拥塞窗口：同一时刻最多允许 MAX_CWND_SIZE 个分块"已发未回执"。
+//为什么不一口气发完：整文件一次性塞进 socket 会占满发送缓冲，任何一块丢失
+//都只能整文件重传；滑窗把在途数据限制在窗口内，靠 1038 回执逐块放行，
+//暂停/继续时再通过 1005 向服务器同步"已确认到第几块"，从断点续传
+#define MAX_CWND_SIZE 5
 #endif // GLOBAL_H

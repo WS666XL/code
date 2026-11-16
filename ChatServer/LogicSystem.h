@@ -47,6 +47,8 @@ private:
 	void CreatePrivateChat(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
 	// 分页加载某个线程的历史消息（1029→1030）
 	void LoadChatMsg(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
+	// 删除单条消息（只影响当前登录用户自己的历史记录）
+	void DeleteChatMsg(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
 	void DealChatImgMsg(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);
 	// day41 群聊：建群（发起人选好友成群）
 	void DealCreateGroup(std::shared_ptr<CSession> session, const short& msg_id, const string& msg_data);

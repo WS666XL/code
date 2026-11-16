@@ -56,19 +56,30 @@ void ChatThreadData::AddMsg(std::shared_ptr<ChatDataBase> msg)
 //收到 1018 回执：按 unique_id 在"未回复"表里找到之前发的消息，
 //补上服务端返回的 msg_id/status，再挪进正式缓存。
 //找不到（比如消息已重发过）就直接当新消息归档
-void ChatThreadData::MoveMsg(std::shared_ptr<ChatDataBase> msg) {
+bool ChatThreadData::MoveMsg(std::shared_ptr<ChatDataBase> msg) {
+    //未回执阶段用户已经删掉了这条：迟到回执不能再加回缓存，也不能上传资源。
+    //返回 false，让 ChatDialog 补发 1061，把这个服务端 id 也标记为删除
+    if (_deleted_unrsp_ids.remove(msg->GetUniqueId())) {
+        return false;
+    }
 
     auto iter = _msg_unrsp_map.find(msg->GetUniqueId());
     if (iter == _msg_unrsp_map.end()) {
         AddMsg(msg);
-        return;
+        return true;
     }
 
-    //复用原来那个对象（页面气泡也持有它），只更新 id 和状态
+    //复用原来那个对象（页面气泡也持有它），补全服务端 id/状态/时间。
+    //自己发消息时本地对象没有 chat_time，必须把回包里的时间拷回来，
+    //否则 AddMsg 会把会话的 _last_msg_time 覆盖成空，聊天列表条目不显示时间
     iter.value()->SetMsgId(msg->GetMsgId());
     iter.value()->SetStatus(msg->GetStatus());
+    if (!msg->GetChatTime().isEmpty()) {
+        iter.value()->SetChatTime(msg->GetChatTime());
+    }
     AddMsg(iter.value());
     _msg_unrsp_map.erase(iter);
+    return true;
 }
 
 void ChatThreadData::SetLastMsgId(int msg_id)
@@ -105,6 +116,36 @@ void ChatThreadData::AppendMsg(int msg_id, std::shared_ptr<ChatDataBase> base_ms
     _last_msg = base_msg->GetMsgContent();
     _last_msg_time = base_msg->GetChatTime();
     _last_msg_id = msg_id;
+}
+
+void ChatThreadData::RemoveMsg(int msg_id)
+{
+    _msg_map.remove(msg_id);
+    RecalcLastMsg();
+}
+
+void ChatThreadData::RemoveUnRspMsg(const QString& unique_id)
+{
+    _msg_unrsp_map.remove(unique_id);
+    //记下来：1018/1036 回执可能已经在路上，到了之后不能再把消息加回缓存
+    _deleted_unrsp_ids.insert(unique_id);
+}
+
+//删除后重算"最后一条"：QMap 按 msg_id 有序，取最后一个有效消息即可
+void ChatThreadData::RecalcLastMsg()
+{
+    _last_msg.clear();
+    _last_msg_time.clear();
+    _last_msg_id = 0;
+    if (_msg_map.isEmpty()) {
+        return;
+    }
+
+    auto iter = _msg_map.end();
+    --iter;
+    _last_msg = iter.value()->GetMsgContent();
+    _last_msg_time = iter.value()->GetChatTime();
+    _last_msg_id = iter.key();
 }
 
 QString ChatThreadData::GetLastMsg()

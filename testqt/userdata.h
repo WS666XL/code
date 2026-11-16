@@ -6,6 +6,7 @@
 #include <vector>
 #include <QJsonObject>
 #include <QMap>
+#include <QSet>
 #include "global.h"
 
 //==================== 用户/申请类数据结构 ====================
@@ -179,6 +180,9 @@ public:
     QString GetChatTime() { return _chat_time; }
     void SetMsgId(int msg_id) { _msg_id = msg_id; }
     void SetStatus(int status) { _status = status; }
+    //回执/通知回来时用服务端时间补全本地先构造的消息对象：
+    //自己发的消息最初 chat_time 为空，不补的话聊天列表时间会被刷成空
+    void SetChatTime(const QString& chat_time) { _chat_time = chat_time; }
     virtual ~ChatDataBase() {}  //虚析构：基类指针 delete 派生类对象时才能正确释放
 protected:
     QString _unique_id;  //客户端本地唯一标识（发消息时用 QUuid 生成，服务端回执靠它匹配）
@@ -277,7 +281,9 @@ public:
         :_other_id(other_id), _thread_id(thread_id), _last_msg_id(last_msg_id),
          _form_type(form_type){}
     void AddMsg(std::shared_ptr<ChatDataBase> msg);   //按服务端 id 归档一条消息
-    void MoveMsg(std::shared_ptr<ChatDataBase> msg);  //收到回执：把"未回复"的消息挪进正式缓存
+    //收到回执：把"未回复"的消息挪进正式缓存。
+    //返回 false 表示该消息在未回执阶段已被用户删除，调用方应补发服务端删除标记
+    bool MoveMsg(std::shared_ptr<ChatDataBase> msg);
     void SetLastMsgId(int msg_id);
     void SetOtherId(int other_id);
     int  GetOtherId();
@@ -290,6 +296,9 @@ public:
     int GetLastMsgId();
     QMap<QString, std::shared_ptr<ChatDataBase>>& GetMsgUnRspRef();
     void AppendUnRspMsg(QString unique_id, std::shared_ptr<ChatDataBase> base_msg);
+    //删除单条消息：从本地缓存移除并重算"最后一条"（聊天列表内容/时间会跟着更新）
+    void RemoveMsg(int msg_id);
+    void RemoveUnRspMsg(const QString& unique_id);
     // ===== day41 群聊 =====
     bool IsGroup() const { return _form_type == ChatFormType::GROUP; }
     QString GetGroupName() const { return _group_name; }
@@ -297,6 +306,7 @@ public:
     int GetMemberCount() const { return _member_count; }
     void SetMemberCount(int count) { _member_count = count; }
 private:
+    void RecalcLastMsg();   //删除消息后按剩余消息重算最后一条内容/时间
     //如果是私聊，则为对方的id；如果是群聊，则为0
     int _other_id = 0;
     int _thread_id = 0;
@@ -313,6 +323,8 @@ private:
     //已发送但还没收到服务端回执的消息，key 是本地生成的 unique_id
     //回执(1018)到了之后按 unique_id 找到它，补上 msg_id 挪进 _msg_map
     QMap<QString, std::shared_ptr<ChatDataBase>> _msg_unrsp_map;
+    //未回执阶段就被用户删除的消息：迟到回执到达时直接丢弃，不能又 AddMsg 加回来
+    QSet<QString> _deleted_unrsp_ids;
 };
 
 #endif

@@ -14,6 +14,8 @@ enum MsgIds {
 	ID_TEST_MSG_RSP = 1002,       //测试消息回包
 	ID_UPLOAD_FILE_REQ = 1003,    //上传文件请求
 	ID_UPLOAD_FILE_RSP = 1004,    //上传文件回复
+	ID_SYNC_FILE_REQ = 1005,      //同步文件上传进度请求（断点续传：问服务器传到第几块了）
+	ID_SYNC_FILE_RSP = 1006,      //同步文件上传进度回复
 	ID_UPLOAD_HEAD_ICON_REQ = 1031, //上传头像请求（老师消息 ID 体系，与 ChatServer 的 1031 同号不同服不冲突）
 	ID_UPLOAD_HEAD_ICON_RSP = 1032, //上传头像回包（最后一块落盘+DB更新后由 FileWorker 回）
 	ID_DOWN_LOAD_FILE_REQ = 1033,   //下载文件请求（按 owner_uid/name 定位落盘文件，分块回 base64）
@@ -47,7 +49,10 @@ enum MsgIds {
 #define LOGIC_WORKER_COUNT 4
 //文件写入线程池数量：按文件名哈希分发，保证同一文件串行写盘
 #define FILE_WORKER_COUNT 4
+//下载线程池数量：按文件名哈希分发，同一文件的分块按序读取
+#define DOWN_LOAD_WORKER_COUNT 4
 
+//错误码与老师版 day38 保持同一套编号，客户端/文档对照时不易混淆
 enum ErrorCodes {
 	Success = 0,
 	Error_Json = 1001,  //Json解析错误
@@ -55,8 +60,14 @@ enum ErrorCodes {
 	TokenInvalid = 1010,   //Token失効（与老师版错误码编号保持一致）
 	UidInvalid = 1011,     //uid 无效（Redis 里查不到 token）
 	FileNotExists = 1012,  //请求下载的文件不存在（与老师版编号一致）
+	FileSaveRedisFailed = 1013,       //上传/下载进度写 Redis 失败
+	CreateFilePathFailed = 1014,      //创建文件目录失败
 	FileWritePermissionFailed = 1015, //文件打开/写入失败
-	FileReadFailed = 1016,            //文件读取失败（与老师版编号一致）
+	FileReadPermissionFailed = 1016,  //文件打开/读取失败
+	FileSeqInvalid = 1017,            //分块序号与服务器记录不一致
+	FileOffsetInvalid = 1018,         //分块偏移量越界
+	FileReadFailed = 1019,            //文件读取失败（与老师版编号一致）
+	RedisReadErr = 1020,              //Redis 里没有续传信息（已过期/丢失）
 };
 
 // Defer类

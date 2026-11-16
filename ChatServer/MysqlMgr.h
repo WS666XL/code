@@ -35,8 +35,11 @@ public:
 	bool GetGroupMembers(int thread_id, std::vector<int>& member_uids) {
 		return _dao.GetGroupMembers(thread_id, member_uids);
 	}
-	std::shared_ptr<PageResult> LoadChatMsg(int threadId, int lastId, int pageSize);
+	std::shared_ptr<PageResult> LoadChatMsg(int threadId, int lastId, int pageSize, int uid);
 	bool AddChatMsg(std::vector<std::shared_ptr<ChatMessage>>& chat_datas);
+	bool DeleteChatMsgForUser(int messageId, int uid) {
+		return _dao.DeleteChatMsgForUser(messageId, uid);
+	}
 private:
 	MysqlMgr();
 	MysqlDao  _dao;

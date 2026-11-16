@@ -1,5 +1,6 @@
 #pragma once
 #include "const.h"
+#include "data.h"
 #include "hiredis.h"
 #include <queue>
 #include <atomic>
@@ -160,6 +161,17 @@ public:
 	~RedisMgr();
 	bool Get(const std::string& key, std::string& value);
 	bool Set(const std::string& key, const std::string& value);
+	//带过期时间的 SET（SETEX）：断点续传的进度只保留 1 小时，
+	//过期后客户端再来续传会拿到 FileNotExists，自动从第 1 块重传
+	bool SetExp(const std::string& key, const std::string& value, int expire_seconds);
+	bool Del(const std::string& key);
+	//上传进度：key 由调用方拼（uid|md5），这里只负责序列化/反序列化 FileInfo
+	bool SetFileInfo(const std::string& key, std::shared_ptr<FileInfo> file_info);
+	std::shared_ptr<FileInfo> GetFileInfo(const std::string& key);
+	//下载进度：单独一套前缀，避免和上传进度串号
+	bool SetDownloadInfo(const std::string& key, std::shared_ptr<FileInfo> file_info);
+	std::shared_ptr<FileInfo> GetDownloadInfo(const std::string& key);
+	bool DelDownloadInfo(const std::string& key);
 	void Close() {
 		_con_pool->Close();
 		_con_pool->ClearConnections();

@@ -48,6 +48,8 @@ public slots:
 public:
     // 请求关闭连接：不直接操作 socket，而是发 sig_close 信号转给 slot_tcp_close
     void CloseConnection();
+    // 删除单条消息（1061）：服务端只给当前用户写删除标记，对方记录不变
+    void DeleteChatMsg(int message_id);
 
 signals:
     void sig_con_success(bool bsuccess);        // 连接结果（true 成功 / false 失败）
@@ -97,6 +99,9 @@ signals:
     void sig_chat_img_rsp(int thread_id, std::shared_ptr<ImgChatData> chat_data);
     // 1039 通知：收到别人的图片消息（占位气泡，随后自动下载图片）
     void sig_img_chat_msg(std::shared_ptr<ImgChatData> imgchat);
+
+    // 1062 删除单条消息回包：error=0 成功；message_id 原样带回
+    void sig_delete_chat_msg_rsp(int error, int message_id);
 
     //头像变更通知（1057）：uid 是换了头像的用户，icon 是服务器上的新头像文件名。
     //global 的头像缓存模块靠 icon 更新本地记录并重新下载

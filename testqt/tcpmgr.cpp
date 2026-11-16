@@ -868,11 +868,38 @@ void TcpMgr::initHandlers()
         emit sig_img_chat_msg(img_chat_data);
     });
 
+    // 1062 删除单条消息回包：{error, message_id}
+    _handlers.insert(ID_DELETE_CHAT_MSG_RSP, [this](ReqId id, int len, QByteArray data) {
+        Q_UNUSED(len);
+        Q_UNUSED(id);
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
+        if (jsonDoc.isNull()) {
+            qDebug() << "TcpMgr delete msg rsp json parse failed";
+            return;
+        }
+        QJsonObject jsonObj = jsonDoc.object();
+        int error = jsonObj["error"].toInt();
+        int message_id = jsonObj["message_id"].toInt();
+        emit sig_delete_chat_msg_rsp(error, message_id);
+    });
 }
 
 // 主动关闭连接：emit 内部信号，由 slot_tcp_close 在对象所属线程里真正 close
 void TcpMgr::CloseConnection(){
     emit sig_close();
+}
+
+// 删除单条消息（1061）：只删自己视角，服务端写 chat_message_deleted
+void TcpMgr::DeleteChatMsg(int message_id)
+{
+    if (message_id <= 0) {
+        return;
+    }
+    QJsonObject jsonObj;
+    jsonObj["message_id"] = message_id;
+    jsonObj["uid"] = UserMgr::GetInstance()->GetUid();
+    QJsonDocument doc(jsonObj);
+    emit sig_send_data(ID_DELETE_CHAT_MSG_REQ, doc.toJson(QJsonDocument::Compact));
 }
 
 // 关闭socket：外部调 CloseConnection() → 发 sig_close → 转到 slot_tcp_close

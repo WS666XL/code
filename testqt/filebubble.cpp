@@ -2,6 +2,9 @@
 #include <QMouseEvent>
 #include <QDesktopServices>
 #include <QUrl>
+#include <QTimer>
+#include <QProgressBar>
+#include <QToolButton>
 #include <QDebug>
 
 //字节数格式化成 "12.3 KB / 3.4 MB"（文件卡片状态行显示用）
@@ -50,6 +53,32 @@ FileBubble::FileBubble(const QString& file_name, qint64 total_size, ChatRole rol
     _status_lb->setStyleSheet("color:#999; font-size:11px;");
     v_layout->addWidget(_status_lb);
 
+    //上传进度条：默认隐藏，发送方开始上传后由 setProgress 显示
+    _progress_bar = new QProgressBar();
+    _progress_bar->setRange(0, 100);
+    _progress_bar->setValue(0);
+    _progress_bar->setTextVisible(true);
+    _progress_bar->setFormat(QStringLiteral("上传中 %1%"));
+    _progress_bar->setFixedHeight(14);
+    _progress_bar->setStyleSheet(
+        "QProgressBar{border:none;background:rgba(0,0,0,40);border-radius:3px;"
+        "color:#333;font-size:10px;}"
+        "QProgressBar::chunk{background:#3a9d5d;border-radius:3px;}");
+    _progress_bar->hide();
+    v_layout->addWidget(_progress_bar);
+
+    //暂停/继续按钮：只在传输中显示（day38 断点续传）。
+    //用扁平 QToolButton，尽量不破坏文件卡片原有观感
+    _pause_btn = new QToolButton();
+    _pause_btn->setText(QStringLiteral("暂停"));
+    _pause_btn->setCursor(Qt::PointingHandCursor);
+    _pause_btn->setAutoRaise(true);
+    _pause_btn->setStyleSheet("QToolButton{color:#3a9d5d;font-size:11px;border:none;}"
+                              "QToolButton:hover{text-decoration:underline;}");
+    _pause_btn->hide();
+    v_layout->addWidget(_pause_btn, 0, Qt::AlignLeft);
+    connect(_pause_btn, &QToolButton::clicked, this, &FileBubble::onPauseClicked);
+
     //卡片固定宽度（文件名宽度变化时气泡不至于抖动）
     card->setFixedWidth(240);
     this->setWidget(card);
@@ -73,18 +102,114 @@ void FileBubble::refreshStatus()
 void FileBubble::setLocalPath(const QString& local_path)
 {
     _local_path = local_path;
+    setTransferState(TransferState::Completed);
     refreshStatus();
 }
 
 void FileBubble::setDownloading()
 {
+    setTransferState(TransferState::Downloading);
     _status_lb->setText(formatSize(_total_size) + " · 下载中...");
 }
 
 void FileBubble::setDownloadFailed()
 {
     _local_path.clear();
+    setTransferState(TransferState::Failed);
     refreshStatus();
+}
+
+//进度：卡片高度随进度条/按钮显示自动增长（容器是布局管理）。
+//到 100% 后延迟隐藏，让用户看到"完成"再收起
+void FileBubble::setProgress(qint64 value, qint64 total)
+{
+    if (total <= 0) {
+        return;
+    }
+
+    int percent = int(value * 100 / total);
+    if (percent < 0) {
+        percent = 0;
+    }
+    if (percent > 100) {
+        percent = 100;
+    }
+    _percent = percent;
+
+    _progress_bar->setValue(percent);
+    if (_progress_bar->isHidden()) {
+        _progress_bar->show();
+        _pause_btn->show();
+    }
+    refreshProgressText();
+
+    if (percent >= 100) {
+        setTransferState(TransferState::Completed);
+    }
+}
+
+void FileBubble::setTransferContext(const QString& name, bool is_upload)
+{
+    _unique_name = name;
+    _is_upload = is_upload;
+}
+
+//状态切换统一管进度条/暂停按钮的显隐：
+//传输中（含暂停）显示；完成/失败/空闲隐藏
+void FileBubble::setTransferState(TransferState state)
+{
+    _state = state;
+    switch (state) {
+    case TransferState::Uploading:
+    case TransferState::Downloading:
+    case TransferState::Paused:
+        _progress_bar->show();
+        _pause_btn->show();
+        _pause_btn->setText(state == TransferState::Paused
+                                ? QStringLiteral("继续") : QStringLiteral("暂停"));
+        refreshProgressText();
+        break;
+    case TransferState::Completed:
+        // 完成保留 0.8 秒进度条，让用户看到 100%
+        QTimer::singleShot(800, this, [this]() {
+            _progress_bar->hide();
+            _pause_btn->hide();
+        });
+        break;
+    case TransferState::Failed:
+    case TransferState::None:
+        _progress_bar->hide();
+        _pause_btn->hide();
+        break;
+    }
+}
+
+void FileBubble::refreshProgressText()
+{
+    if (_state == TransferState::Paused) {
+        _progress_bar->setFormat(QStringLiteral("已暂停 %1%").arg(_percent));
+    }
+    else if (_is_upload) {
+        _progress_bar->setFormat(QStringLiteral("上传中 %1%").arg(_percent));
+    }
+    else {
+        _progress_bar->setFormat(QStringLiteral("下载中 %1%").arg(_percent));
+    }
+}
+
+//按钮点击：传输中 → 暂停；已暂停 → 继续（具体调上传还是下载由 ChatPage 判断）
+void FileBubble::onPauseClicked()
+{
+    if (_state == TransferState::Uploading || _state == TransferState::Downloading) {
+        setTransferState(TransferState::Paused);
+        emit sig_transfer_pause(_unique_name, _is_upload);
+        return;
+    }
+    if (_state == TransferState::Paused) {
+        setTransferState(_is_upload ? TransferState::Uploading
+                                    : TransferState::Downloading);
+        emit sig_transfer_resume(_unique_name, _is_upload);
+    }
 }
 
 void FileBubble::mousePressEvent(QMouseEvent* event)

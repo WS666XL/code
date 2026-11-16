@@ -44,6 +44,31 @@ struct ChatMessage {
 	int msg_type = 0;
 };
 
+//文件上传/下载进度：day38 断点续传用，JSON 序列化后存 Redis
+//上传 key = "file_upload_<uid>|<md5>"，下载 key = "file_download_<owner_uid>|<name>"
+//带 uid 是为了隔离不同用户上传同一份文件（md5 相同）时的进度
+struct FileInfo {
+	std::string _file_path_str;   //最终落盘路径
+	std::string _name;            //文件名
+	int _seq = 0;                 //已处理到的分块序号（上传=已收，下载=已发）
+	int64_t _total_size = 0;      //文件总字节数
+	int64_t _trans_size = 0;      //已处理的字节数（进度条/续传偏移都靠它）
+};
+
+//一次下载任务：1033 请求解析后投递给 DownloadWorker，
+//真正的读文件/更新 Redis 进度在下载线程里做，logic 线程不阻塞
+struct DownloadTask {
+	DownloadTask(std::string key, std::string path, std::string name, int seq,
+		std::function<void(const Json::Value&)> callback)
+		:_key(key), _path(path), _name(name), _seq(seq), _callback(callback)
+	{}
+	std::string _key;     //Redis 进度 key（owner_uid|name，按文件所有者隔离同名文件）
+	std::string _path;    //服务器上的源文件路径
+	std::string _name;    //文件名（回包用）
+	int _seq;             //本次要读的分块序号（从 1 开始）
+	std::function<void(const Json::Value&)> _callback;  //读完/失败后回调回包
+};
+
 //一次分块上传任务：从 1003/1031/1037 请求里解析出来的字段 + 解码前的 base64 数据
 //_msgid 区分消息类型：FileWorker 按 _msgid 查 handler 表分发
 //（1003 纯落盘 / 1031 落盘+DB+Redis / 1037 落盘+状态更新+gRPC 通知）
@@ -60,6 +85,8 @@ struct FileTask {
 	{}
 	shared_ptr<CSession> _session;  //回执要发回给这个连接
 	short _msgid;        //来源消息 ID（1003/1031/1037），FileWorker 据此选择处理逻辑
+	string _md5;         //文件 md5：作为续传进度 key，也用来给 .part 临时文件命名
+	                     //（同一用户并发上传同名文件时，md5 不同则临时文件不同，不会互相截断）
 	int _seq;            //分块序号（从 1 开始）
 	string _name;        //文件名（落盘文件名）
 	int _total_size;     //文件总大小

@@ -7,6 +7,7 @@
 #include<QStandardPaths>
 #include<QMessageBox>
 #include"chatitembase.h"
+#include"bubbleframe.h"
 #include"textbubble.h"
 #include"picturebubble.h"
 #include"filebubble.h"
@@ -16,6 +17,20 @@
 #include<QJsonDocument>
 #include<QJsonArray>
 #include<QUuid>
+#include<QFileDialog>
+#include<QFrame>
+#include<QFont>
+#include<QGridLayout>
+#include<QHBoxLayout>
+#include<QToolButton>
+#include<QTimer>
+#include<QScreen>
+#include<QGuiApplication>
+#include<QDateTime>
+#include<QLabel>
+#include<QMenu>
+#include<QAction>
+#include<QCursor>
 
 ChatPage::ChatPage(QWidget *parent)
     : QWidget(parent)
@@ -31,9 +46,45 @@ ChatPage::ChatPage(QWidget *parent)
     ui->emo_lb->SetState("normal","hover","press","normal","hover","press");
     ui->file_lb->SetState("normal","hover","press","normal","hover","press");
 
+    // 回形针按钮：WSL 下拖拽文件不方便，点它直接弹系统文件选择框。
+    // 选中后走 MessageTextEdit::insertFileFromUrl，与拖拽/粘贴完全同一条插入路径：
+    // 图片显示预览按图片消息发送，其他文件显示文件卡片按文件消息发送
+    ui->file_lb->setCursor(Qt::PointingHandCursor);
+    ui->file_lb->setToolTip(tr("选择文件"));
+    connect(ui->file_lb, &ClickedLabel::clicked, this,
+        [this](const QString&, ClickLbState) {
+            QStringList files = QFileDialog::getOpenFileNames(
+                this, tr("选择文件"), QString(), tr("所有文件 (*)"));
+            if (!files.isEmpty()) {
+                ui->chatEdit->insertFileFromUrl(files);
+            }
+        });
+
+    // 笑脸按钮：弹出 Unicode 表情面板，点表情插入输入框光标处。
+    // 消息仍然走普通文本链路，不改协议（DB 的 content 是 utf8mb4，支持 4 字节 emoji）
+    ui->emo_lb->setCursor(Qt::PointingHandCursor);
+    ui->emo_lb->setToolTip(tr("表情"));
+    connect(ui->emo_lb, &ClickedLabel::clicked, this,
+        [this](const QString&, ClickLbState) {
+            ToggleEmojiPanel();
+        });
+
     //下载完成：执行该文件名对应的刷新回调（图片气泡换真图 / 文件卡片切"点击打开"）
     connect(FileTcpMgr::GetInstance().get(), &FileTcpMgr::sig_file_downloaded,
         this, [this](const QString& name) {
+            //先让气泡切到完成态（进度条到 100% 再收起），再执行刷新回调
+            if (auto it = _download_bubbles.find(name); it != _download_bubbles.end()) {
+                if (QWidget* bubble = it.value()) {
+                    if (auto* pic = qobject_cast<PictureBubble*>(bubble)) {
+                        pic->setTransferState(TransferState::Completed);
+                    }
+                    else if (auto* file = qobject_cast<FileBubble*>(bubble)) {
+                        file->setTransferState(TransferState::Completed);
+                    }
+                }
+                _download_bubbles.erase(it);
+            }
+
             auto iter = _download_done_map.find(name);
             if (iter == _download_done_map.end()) {
                 return;
@@ -46,6 +97,18 @@ ChatPage::ChatPage(QWidget *parent)
     //下载失败：执行失败回调（文件卡片恢复"点击下载"可重试；图片气泡保持占位）
     connect(FileTcpMgr::GetInstance().get(), &FileTcpMgr::sig_download_failed,
         this, [this](const QString& name) {
+            if (auto it = _download_bubbles.find(name); it != _download_bubbles.end()) {
+                if (QWidget* bubble = it.value()) {
+                    if (auto* pic = qobject_cast<PictureBubble*>(bubble)) {
+                        pic->setTransferState(TransferState::Failed);
+                    }
+                    else if (auto* file = qobject_cast<FileBubble*>(bubble)) {
+                        file->setTransferState(TransferState::Failed);
+                    }
+                }
+                _download_bubbles.erase(it);
+            }
+
             auto iter = _download_fail_map.find(name);
             if (iter == _download_fail_map.end()) {
                 return;
@@ -54,6 +117,324 @@ ChatPage::ChatPage(QWidget *parent)
             _download_fail_map.erase(iter);
             _download_done_map.remove(name);
         });
+
+    //上传进度（day40）：1038 回执驱动，按 unique_name 找回自己发的图片/文件气泡刷进度条。
+    //进度条归气泡自己画，ChatPage 只负责按名字找到它，不关心是图片还是文件
+    connect(FileTcpMgr::GetInstance().get(), &FileTcpMgr::sig_chat_upload_progress,
+        this, [this](const QString& name, qint64 trans_size, qint64 total_size) {
+            auto iter = _upload_bubbles.find(name);
+            if (iter == _upload_bubbles.end()) {
+                return;
+            }
+            QWidget* bubble = iter.value();
+            if (bubble == nullptr) {
+                //气泡已随会话切换销毁：只是没人接收进度，上传本身照常完成
+                _upload_bubbles.erase(iter);
+                return;
+            }
+            if (auto* pic_bubble = qobject_cast<PictureBubble*>(bubble)) {
+                pic_bubble->setProgress(trans_size, total_size);
+            }
+            else if (auto* file_bubble = qobject_cast<FileBubble*>(bubble)) {
+                file_bubble->setProgress(trans_size, total_size);
+            }
+            if (trans_size >= total_size) {
+                _upload_bubbles.erase(iter);   //上传完成，不再需要跟踪
+            }
+        });
+
+    //下载进度（day38）：1034 每块带回 current_size/total_size，按 unique_name 找回气泡。
+    //与上传共用气泡的进度条，只是方向不同（文字显示"下载中"）
+    connect(FileTcpMgr::GetInstance().get(), &FileTcpMgr::sig_chat_download_progress,
+        this, [this](const QString& name, qint64 current_size, qint64 total_size) {
+            auto iter = _download_bubbles.find(name);
+            if (iter == _download_bubbles.end()) {
+                return;
+            }
+            QWidget* bubble = iter.value();
+            if (bubble == nullptr) {
+                _download_bubbles.erase(iter);
+                return;
+            }
+            if (auto* pic_bubble = qobject_cast<PictureBubble*>(bubble)) {
+                // 不在这里强切 Downloading：暂停后可能还有一块晚到的在途回包，
+                // 强切会把"已暂停"覆盖掉，用户就看不到继续按钮了
+                pic_bubble->setProgress(current_size, total_size);
+            }
+            else if (auto* file_bubble = qobject_cast<FileBubble*>(bubble)) {
+                file_bubble->setProgress(current_size, total_size);
+            }
+        });
+
+    //上传失败（token 失效/续传接不上）：把气泡切失败态，避免一直停在"上传中"
+    connect(FileTcpMgr::GetInstance().get(), &FileTcpMgr::sig_chat_upload_failed,
+        this, [this](const QString& name) {
+            auto iter = _upload_bubbles.find(name);
+            if (iter == _upload_bubbles.end()) {
+                return;
+            }
+            if (QWidget* bubble = iter.value()) {
+                if (auto* pic = qobject_cast<PictureBubble*>(bubble)) {
+                    pic->setTransferState(TransferState::Failed);
+                }
+                else if (auto* file = qobject_cast<FileBubble*>(bubble)) {
+                    file->setTransferState(TransferState::Failed);
+                }
+            }
+            _upload_bubbles.erase(iter);
+        });
+}
+
+//把图片/文件气泡的暂停/继续接到 FileTcpMgr。QPointer/QObject 生命周期由父控件管理，
+//ChatPage 只在这里做一次连接（气泡每次重画都是新对象，不会重复连接）
+void ChatPage::AttachTransferContext(QWidget* bubble, const QString& name, bool is_upload)
+{
+    if (!bubble) {
+        return;
+    }
+
+    auto pause_handler = [](const QString& n, bool up) {
+        if (up) {
+            FileTcpMgr::GetInstance()->PauseUpload(n);
+        }
+        else {
+            FileTcpMgr::GetInstance()->PauseDownload(n);
+        }
+    };
+    auto resume_handler = [](const QString& n, bool up) {
+        if (up) {
+            FileTcpMgr::GetInstance()->ResumeUpload(n);
+        }
+        else {
+            FileTcpMgr::GetInstance()->ResumeDownload(n);
+        }
+    };
+
+    if (auto* pic = qobject_cast<PictureBubble*>(bubble)) {
+        pic->setTransferContext(name, is_upload);
+        connect(pic, &PictureBubble::sig_transfer_pause, this, pause_handler);
+        connect(pic, &PictureBubble::sig_transfer_resume, this, resume_handler);
+    }
+    else if (auto* file = qobject_cast<FileBubble*>(bubble)) {
+        file->setTransferContext(name, is_upload);
+        connect(file, &FileBubble::sig_transfer_pause, this, pause_handler);
+        connect(file, &FileBubble::sig_transfer_resume, this, resume_handler);
+    }
+}
+
+// 右键气泡：弹"删除"菜单。气泡本身不知道消息 id，
+// 所以创建气泡时把对应的 ChatDataBase 捕获进 lambda
+void ChatPage::AttachDeleteMenu(QWidget* bubble, std::shared_ptr<ChatDataBase> msg)
+{
+    auto* frame = qobject_cast<BubbleFrame*>(bubble);
+    if (!frame || !msg) {
+        return;
+    }
+
+    connect(frame, &BubbleFrame::sig_delete_requested, this, [this, msg]() {
+        QMenu menu(this);
+        QAction* delete_action = menu.addAction(QStringLiteral("删除"));
+        QAction* chosen = menu.exec(QCursor::pos());
+        if (chosen == delete_action) {
+            DeleteChatMsg(msg);
+        }
+    });
+}
+
+// 删除单条消息：
+// 1. 从聊天页移除气泡
+// 2. 从 ChatThreadData 缓存移除（重算最后一条，左侧列表内容/时间同步刷新）
+// 3. 已落库的消息发 1061，服务端写 chat_message_deleted（只删自己视角）
+void ChatPage::DeleteChatMsg(std::shared_ptr<ChatDataBase> msg)
+{
+    if (!msg || !_chat_data) {
+        return;
+    }
+
+    const int msg_id = msg->GetMsgId();
+    const QString unique_id = msg->GetUniqueId();
+    ChatItemBase* item = nullptr;
+
+    if (msg_id > 0) {
+        auto iter = _base_item_map.find(msg_id);
+        if (iter != _base_item_map.end()) {
+            item = iter.value();
+            _base_item_map.erase(iter);
+        }
+    }
+    else {
+        auto iter = _unrsp_item_map.find(unique_id);
+        if (iter != _unrsp_item_map.end()) {
+            item = iter.value();
+            _unrsp_item_map.erase(iter);
+        }
+    }
+
+    if (item) {
+        ui->chat_data_list->removeChatItem(item);
+    }
+
+    if (msg_id > 0) {
+        _chat_data->RemoveMsg(msg_id);
+        TcpMgr::GetInstance()->DeleteChatMsg(msg_id);
+        emit sig_chat_msg_deleted(_chat_data->GetThreadId());
+    }
+    else {
+        // 还没收到服务端回执的消息：只删本地未回执缓存，没有可发的服务端 id
+        _chat_data->RemoveUnRspMsg(unique_id);
+    }
+}
+
+// 群聊里一条消息该显示谁的昵称：
+// - 自己：优先 nick，没填则 name
+// - 好友：优先 nick，没填则 name
+// - 非好友（大群里其他成员）：客户端没有资料，兜底显示 uid，至少不会丢气泡
+QString ChatPage::DisplayNameForUid(int uid)
+{
+    auto self_info = UserMgr::GetInstance()->GetUserInfo();
+    const bool is_group = _chat_data && _chat_data->IsGroup();
+    if (self_info && self_info->_uid == uid) {
+        return (is_group && !self_info->_nick.isEmpty()) ? self_info->_nick : self_info->_name;
+    }
+
+    auto friend_info = UserMgr::GetInstance()->GetFriendById(uid);
+    if (friend_info) {
+        return (is_group && !friend_info->_nick.isEmpty())
+                   ? friend_info->_nick : friend_info->_name;
+    }
+    return QString::number(uid);
+}
+
+// 日期分隔条：今天 / 昨天 / yyyy年M月d日。
+// chat_time 为空（自己刚发、还没收到回执）时按今天处理，避免新消息没有分隔条
+void ChatPage::MaybeAppendDateSeparator(const QString& chat_time)
+{
+    QDateTime dt = QDateTime::fromString(chat_time, "yyyy-MM-dd HH:mm:ss");
+    QDate date = dt.isValid() ? dt.date() : QDate::currentDate();
+    if (date == _last_sep_date) {
+        return;
+    }
+    _last_sep_date = date;
+
+    const QDate today = QDate::currentDate();
+    QString text;
+    if (date == today) {
+        text = QStringLiteral("今天");
+    }
+    else if (date == today.addDays(-1)) {
+        text = QStringLiteral("昨天");
+    }
+    else {
+        text = date.toString(QStringLiteral("yyyy年M月d日"));
+    }
+
+    auto* sep = new QWidget();
+    auto* layout = new QHBoxLayout(sep);
+    layout->setContentsMargins(20, 10, 20, 10);
+    auto* label = new QLabel(text, sep);
+    label->setStyleSheet("color:#9aa0a6;font-size:12px;");
+    label->setAlignment(Qt::AlignCenter);
+    layout->addStretch();
+    layout->addWidget(label);
+    layout->addStretch();
+    ui->chat_data_list->appendChatItem(sep);
+}
+
+// 表情面板：第一次点笑脸时懒创建，之后复用。
+// 用 Qt::Popup：点面板外面会自动关闭，但点面板内部不会关，可以连续插入多个表情
+void ChatPage::ToggleEmojiPanel()
+{
+    if (_emoji_panel.isNull()) {
+        auto* panel = new QFrame(this, Qt::Popup | Qt::FramelessWindowHint);
+        panel->setObjectName("emojiPanel");
+        panel->setStyleSheet(
+            "QFrame#emojiPanel{background:#ffffff;border:1px solid #e0e0e0;}");
+
+        auto* grid = new QGridLayout(panel);
+        grid->setContentsMargins(8, 8, 8, 8);
+        grid->setSpacing(2);
+
+        // 固定用 emoji 字体：WSL 下已把 Windows 的 seguiemj.ttf 装到用户字体目录，
+        // 中文输入框里也能通过 fontconfig fallback 显示这些字符
+        QFont emoji_font(QStringLiteral("Segoe UI Emoji"));
+        emoji_font.setPointSize(15);
+
+        static const QStringList emojis = {
+            QString::fromUtf8("😀"), QString::fromUtf8("😁"), QString::fromUtf8("😂"), QString::fromUtf8("🤣"),
+            QString::fromUtf8("😃"), QString::fromUtf8("😄"), QString::fromUtf8("😅"), QString::fromUtf8("😆"),
+            QString::fromUtf8("😉"), QString::fromUtf8("😊"), QString::fromUtf8("😋"), QString::fromUtf8("😎"),
+            QString::fromUtf8("😍"), QString::fromUtf8("😘"), QString::fromUtf8("🙂"), QString::fromUtf8("🙃"),
+            QString::fromUtf8("😢"), QString::fromUtf8("😭"), QString::fromUtf8("😡"), QString::fromUtf8("😤"),
+            QString::fromUtf8("😱"), QString::fromUtf8("😴"), QString::fromUtf8("🤔"), QString::fromUtf8("🙄"),
+            QString::fromUtf8("😬"), QString::fromUtf8("😳"), QString::fromUtf8("🥺"), QString::fromUtf8("😷"),
+            QString::fromUtf8("🤒"), QString::fromUtf8("🤕"), QString::fromUtf8("😇"), QString::fromUtf8("🤗"),
+            QString::fromUtf8("🤩"), QString::fromUtf8("🥳"), QString::fromUtf8("😏"), QString::fromUtf8("😌"),
+            QString::fromUtf8("😔"), QString::fromUtf8("😪"), QString::fromUtf8("😜"), QString::fromUtf8("🤪"),
+            QString::fromUtf8("👍"), QString::fromUtf8("👎"), QString::fromUtf8("👏"), QString::fromUtf8("🙏"),
+            QString::fromUtf8("💪"), QString::fromUtf8("👌"), QString::fromUtf8("✌️"), QString::fromUtf8("🤝"),
+            QString::fromUtf8("❤️"), QString::fromUtf8("💔"), QString::fromUtf8("💯"), QString::fromUtf8("🔥"),
+            QString::fromUtf8("🎉"), QString::fromUtf8("🎊"), QString::fromUtf8("🌹"), QString::fromUtf8("🌸"),
+            QString::fromUtf8("☀️"), QString::fromUtf8("🌙"), QString::fromUtf8("⭐"), QString::fromUtf8("🍀"),
+            QString::fromUtf8("🎁"), QString::fromUtf8("🎂"), QString::fromUtf8("🍺"), QString::fromUtf8("☕")
+        };
+
+        int index = 0;
+        for (const QString& emoji : emojis) {
+            auto* btn = new QToolButton(panel);
+            btn->setText(emoji);
+            btn->setFont(emoji_font);
+            btn->setFixedSize(34, 34);
+            btn->setAutoRaise(true);
+            btn->setCursor(Qt::PointingHandCursor);
+            btn->setStyleSheet(
+                "QToolButton{border:none;border-radius:6px;}"
+                "QToolButton:hover{background:#eef3f8;}");
+            connect(btn, &QToolButton::clicked, this, [this, emoji]() {
+                // 插入到输入框当前光标处。这里不抢输入框焦点：
+                // Qt::Popup 保持打开，用户可以连续点多个表情
+                QTextCursor cursor = ui->chatEdit->textCursor();
+                cursor.insertText(emoji);
+                ui->chatEdit->setTextCursor(cursor);
+            });
+            grid->addWidget(btn, index / 8, index % 8);
+            ++index;
+        }
+
+        panel->adjustSize();
+        _emoji_panel = panel;
+    }
+
+    if (_emoji_panel->isVisible()) {
+        _emoji_panel->hide();
+        return;
+    }
+
+    // 面板放在笑脸按钮上方；上面空间不够就放到按钮下方，并做屏幕边界收敛
+    _emoji_panel->adjustSize();
+    const QPoint anchor = ui->emo_lb->mapToGlobal(QPoint(0, 0));
+    int x = anchor.x();
+    int y = anchor.y() - _emoji_panel->height() - 8;
+    if (QScreen* screen = QGuiApplication::screenAt(anchor)) {
+        const QRect avail = screen->availableGeometry();
+        if (x + _emoji_panel->width() > avail.right()) {
+            x = avail.right() - _emoji_panel->width();
+        }
+        if (x < avail.left()) {
+            x = avail.left();
+        }
+        if (y < avail.top()) {
+            y = anchor.y() + ui->emo_lb->height() + 8;
+        }
+    }
+    _emoji_panel->move(x, y);
+
+    // 延后到本次鼠标点击处理完再 show：避免 Popup 刚弹出就被同一次点击关掉
+    QTimer::singleShot(0, this, [this]() {
+        if (_emoji_panel) {
+            _emoji_panel->show();
+            _emoji_panel->raise();
+        }
+    });
 }
 
 ChatPage::~ChatPage()
@@ -123,6 +504,9 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
 {
     auto self_info = UserMgr::GetInstance()->GetUserInfo();
 
+    //跨天时先插一条日期分隔条（今天/昨天/yyyy年M月d日）
+    MaybeAppendDateSeparator(msg->GetChatTime());
+
     // ===== day39 图片 / day41 文件消息气泡（共用 1035-1039 链路）=====
     // 自己发的：MsgInfo.content 是本地路径（本地必有，直接显示）
     // 对方发的 / 历史记录里的：查本地缓存（图片 chatimg / 文件 chatfile），
@@ -156,18 +540,17 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
         bool need_download = false;
         ChatItemBase* pChatItem = new ChatItemBase(role);
         if (is_self) {
-            pChatItem->setUserName(self_info->_name);
+            pChatItem->setUserName(DisplayNameForUid(self_info->_uid));
             pChatItem->setUserIcon(LoadAvatarPixmap(self_info->_icon, QSize(42,42), self_info->_uid));
         }
         else {
             auto friend_info = UserMgr::GetInstance()->GetFriendById(sender_uid);
+            pChatItem->setUserName(DisplayNameForUid(sender_uid));
             if (friend_info) {
-                pChatItem->setUserName(friend_info->_name);
                 pChatItem->setUserIcon(LoadAvatarPixmap(friend_info->_icon, QSize(42,42), sender_uid));
             }
             else {
-                //对方资料不在好友表（异常数据）：uid 兜底 + 默认头像
-                pChatItem->setUserName(QString::number(sender_uid));
+                //群成员不是自己的好友：没有资料，用默认头像，昵称由 DisplayNameForUid 兜底
                 pChatItem->setUserIcon(LoadAvatarPixmap(":/res/head_1.jpg", QSize(42,42)));
             }
         }
@@ -177,14 +560,24 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
             auto* file_bubble = new FileBubble(
                 msg_info->_file_name.isEmpty() ? msg_info->_unique_name : msg_info->_file_name,
                 msg_info->_total_size, role);
+            //上传/下载共用同一张卡片：先挂上下文，暂停按钮才能找到对应传输任务
+            AttachTransferContext(file_bubble, msg_info->_unique_name, is_self);
             if (!local_path.isEmpty() && QFileInfo::exists(local_path)) {
                 file_bubble->setLocalPath(local_path);
+                //自己发的文件如果还在传，重画时恢复进度/暂停态
+                if (is_self && (msg_info->_transfer_state == TransferState::Uploading
+                                || msg_info->_transfer_state == TransferState::Paused)) {
+                    _upload_bubbles[msg_info->_unique_name] = file_bubble;
+                    file_bubble->setTransferState(msg_info->_transfer_state);
+                    file_bubble->setProgress(msg_info->_rsp_size, msg_info->_total_size);
+                }
             }
             else {
                 need_download = true;
                 //点击 → 发起 1033 下载（chatfile 目录）+ 登记成功/失败回调
                 connect(file_bubble, &FileBubble::sig_card_clicked, this,
                     [this, file_bubble, msg_info, sender_uid]() {
+                        _download_bubbles[msg_info->_unique_name] = file_bubble;
                         _download_done_map[msg_info->_unique_name] = [file_bubble, msg_info, sender_uid]() {
                             QString storage_dir = QStandardPaths::writableLocation(
                                 QStandardPaths::AppDataLocation);
@@ -203,8 +596,16 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
                             file_bubble->setDownloadFailed();
                         };
                         file_bubble->setDownloading();
-                        FileTcpMgr::GetInstance()->DownloadChatFile(
-                            msg_info->_unique_name, sender_uid);
+                        // 已经暂停的下载：只恢复"已暂停"显示，等用户点继续再请求，
+                        // 不在这里自动续下（否则暂停语义就失效了）
+                        if (FileTcpMgr::GetInstance()->IsDownloadPaused(
+                                msg_info->_unique_name)) {
+                            file_bubble->setTransferState(TransferState::Paused);
+                        }
+                        else {
+                            FileTcpMgr::GetInstance()->DownloadChatFile(
+                                msg_info->_unique_name, sender_uid);
+                        }
                     });
             }
             pChatItem->setWidget(file_bubble);
@@ -221,8 +622,11 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
                 need_download = true;
             }
             auto* pic_bubble = new PictureBubble(pic, role);
+            AttachTransferContext(pic_bubble, msg_info->_unique_name, is_self);
             pChatItem->setWidget(pic_bubble);
             if (need_download) {
+                //先登记气泡，1034 下载进度按名字找回它刷进度条
+                _download_bubbles[msg_info->_unique_name] = pic_bubble;
                 _download_done_map[msg_info->_unique_name] = [pic_bubble, msg_info, sender_uid]() {
                     QString storage_dir = QStandardPaths::writableLocation(
                         QStandardPaths::AppDataLocation);
@@ -234,22 +638,39 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
                         pic_bubble->setPicture(QPixmap(local_path));
                     }
                 };
-                FileTcpMgr::GetInstance()->DownloadChatImage(
-                    msg_info->_unique_name, sender_uid);
+
+                //暂停中的下载：切回会话时保持"已暂停"，等用户点图继续
+                if (FileTcpMgr::GetInstance()->IsDownloadPaused(
+                        msg_info->_unique_name)) {
+                    pic_bubble->setTransferState(TransferState::Paused);
+                }
+                else {
+                    pic_bubble->setTransferState(TransferState::Downloading);
+                    FileTcpMgr::GetInstance()->DownloadChatImage(
+                        msg_info->_unique_name, sender_uid);
+                }
+            }
+            else if (is_self && (msg_info->_transfer_state == TransferState::Uploading
+                                 || msg_info->_transfer_state == TransferState::Paused)) {
+                //自己发的图还在传：重画后恢复进度条/暂停显示
+                _upload_bubbles[msg_info->_unique_name] = pic_bubble;
+                pic_bubble->setTransferState(msg_info->_transfer_state);
+                pic_bubble->setProgress(msg_info->_rsp_size, msg_info->_total_size);
             }
         }
+
+        //右键删除：图片/文件气泡也挂上，不管本地是否已下载完成
+        AttachDeleteMenu(pChatItem->getBubble(), msg);
 
         pChatItem->setStatus(msg->GetStatus());
         ui->chat_data_list->appendChatItem(pChatItem);
 
-        //本地已就绪的（发送方 / 缓存命中）：按回执状态挂气泡索引
-        if (!need_download) {
-            if (rsp) {
-                _base_item_map[msg->GetMsgId()] = pChatItem;
-            }
-            else {
-                _unrsp_item_map[msg->GetUniqueId()] = pChatItem;
-            }
+        //按回执状态挂气泡索引（全部登记，删除/刷新头像时都要能找到它）
+        if (rsp) {
+            _base_item_map[msg->GetMsgId()] = pChatItem;
+        }
+        else {
+            _unrsp_item_map[msg->GetUniqueId()] = pChatItem;
         }
         return;
     }
@@ -259,7 +680,7 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
         role = ChatRole::Self;
         ChatItemBase* pChatItem = new ChatItemBase(role);
 
-        pChatItem->setUserName(self_info->_name);
+        pChatItem->setUserName(DisplayNameForUid(self_info->_uid));
         //头像走全局缓存加载（避免重复解码）；气泡 item 不参与下载回显的自动刷新，
         //本地缺文件时后台下载，重开会话时自然显示
         pChatItem->setUserIcon(LoadAvatarPixmap(self_info->_icon, QSize(42,42), self_info->_uid));
@@ -270,6 +691,7 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
         }
 
         pChatItem->setWidget(pBubble);
+        AttachDeleteMenu(pBubble, msg);
         auto status = msg->GetStatus();
         pChatItem->setStatus(status);
         ui->chat_data_list->appendChatItem(pChatItem);
@@ -286,16 +708,20 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
         role = ChatRole::Other;
         ChatItemBase* pChatItem = new ChatItemBase(role);
         auto friend_info = UserMgr::GetInstance()->GetFriendById(msg->GetSendUid());
-        if (friend_info == nullptr) {
-            return;
+        //群成员可能不是自己的好友：没有资料也不能丢气泡，昵称兜底 uid、头像用默认
+        pChatItem->setUserName(DisplayNameForUid(msg->GetSendUid()));
+        if (friend_info) {
+            pChatItem->setUserIcon(LoadAvatarPixmap(friend_info->_icon, QSize(42,42), friend_info->_uid));
         }
-        pChatItem->setUserName(friend_info->_name);
-        pChatItem->setUserIcon(LoadAvatarPixmap(friend_info->_icon, QSize(42,42), friend_info->_uid));
+        else {
+            pChatItem->setUserIcon(LoadAvatarPixmap(":/res/head_1.jpg", QSize(42,42)));
+        }
         QWidget* pBubble = nullptr;
         if (msg->GetMsgType() == ChatMsgType::TEXT) {
             pBubble = new TextBubble(role, msg->GetMsgContent());
         }
         pChatItem->setWidget(pBubble);
+        AttachDeleteMenu(pBubble, msg);
         auto status = msg->GetStatus();
         pChatItem->setStatus(status);
         ui->chat_data_list->appendChatItem(pChatItem);
@@ -415,15 +841,38 @@ void ChatPage::on_send_btn_clicked()
 
             //气泡立即显示本地内容：图片=缩略图 / 文件=文件卡片
             ChatItemBase *pChatItem = new ChatItemBase(role);
-            pChatItem->setUserName(userName);
+            pChatItem->setUserName(DisplayNameForUid(user_info->_uid));
             pChatItem->setUserIcon(LoadAvatarPixmap(user_info->_icon, QSize(42,42), user_info->_uid));
+            QWidget* bubble = nullptr;
             if (is_file) {
-                pChatItem->setWidget(new FileBubble(msg_info->_file_name,
-                    msg_info->_total_size, role));
+                auto* file_bubble = new FileBubble(msg_info->_file_name,
+                    msg_info->_total_size, role);
+                // 发送方本地文件就在：直接是可打开态（之前漏了这步，卡片一直显示"点击下载"）
+                file_bubble->setLocalPath(msg_info->content);
+                bubble = file_bubble;
             }
             else {
-                pChatItem->setWidget(new PictureBubble(msgList[i].pixmap, role));
+                // 图片气泡用原始图片构造，不用输入框的 120×80 缩略图：
+                // 发送方和接收方都走 PictureBubble 同一套 160×90 等比缩放，
+                // 两边气泡尺寸才能一致（之前发送方小、接收方大就是这个原因）
+                QPixmap full_pix(msg_info->content);
+                bubble = new PictureBubble(
+                    full_pix.isNull() ? msgList[i].pixmap : full_pix, role);
             }
+            pChatItem->setWidget(bubble);
+            //挂断点续传上下文（点暂停/继续时按 unique_name 找回上传任务），
+            //并把状态标成上传中：进度条与暂停按钮从这一刻开始显示
+            AttachTransferContext(bubble, msg_info->_unique_name, true);
+            msg_info->_transfer_state = TransferState::Uploading;
+            msg_info->_transfer_type = TransferType::Upload;
+            if (auto* pic = qobject_cast<PictureBubble*>(bubble)) {
+                pic->setTransferState(TransferState::Uploading);
+            }
+            else if (auto* file = qobject_cast<FileBubble*>(bubble)) {
+                file->setTransferState(TransferState::Uploading);
+            }
+            //登记到"上传中"表：1038 回执按 unique_name 找到这个气泡刷进度条
+            _upload_bubbles.insert(msg_info->_unique_name, bubble);
             pChatItem->setStatus(0);
             ui->chat_data_list->appendChatItem(pChatItem);
 
@@ -432,6 +881,8 @@ void ChatPage::on_send_btn_clicked()
             auto msg_type = is_file ? ChatMsgType::FILE : ChatMsgType::PIC;
             auto img_msg = std::make_shared<ImgChatData>(msg_info, uuidString, thread_id,
                 ChatFormType::PRIVATE, msg_type, user_info->_uid, 0);
+            //右键删除：未回执阶段也能删（只清本地，服务端还没 message_id）
+            AttachDeleteMenu(bubble, img_msg);
             _chat_data->AppendUnRspMsg(uuidString, img_msg);
             _unrsp_item_map[uuidString] = pChatItem;
             //登记传输信息：1036 回包按 unique_name 取回 MsgInfo 发起 1037
@@ -499,6 +950,8 @@ void ChatPage::on_send_btn_clicked()
         //先按私聊组织消息数据，状态 0 = 未读
         auto txt_msg = std::make_shared<TextChatData>(uuidString, thread_id, ChatFormType::PRIVATE,
             ChatMsgType::TEXT, content, user_info->_uid, 0);
+        //右键删除：未回执阶段也能删（只清本地，服务端还没 message_id）
+        AttachDeleteMenu(pBubble, txt_msg);
         //将未回复的消息加入到会话缓存，等 1018 回执后 MoveMsg 补上 msg_id
         _chat_data->AppendUnRspMsg(uuidString, txt_msg);
 
@@ -542,4 +995,8 @@ void ChatPage::clearItems()
     _base_item_map.clear();
     _download_done_map.clear();
     _download_fail_map.clear();
+    _upload_bubbles.clear();
+    _download_bubbles.clear();
+    //切换会话/重画时重置日期游标，否则新会话第一条消息可能不插分隔条
+    _last_sep_date = QDate();
 }
