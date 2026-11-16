@@ -463,6 +463,11 @@ void TcpMgr::initHandlers()
         auto sender = jsonObj["fromuid"].toInt();
 
         std::vector<std::shared_ptr<TextChatData>> chat_datas;
+        //服务端 1018 回包与 1019 通知共用一份 JSON，form_type 区分私聊/群聊
+        //（此前硬编码 PRIVATE，群消息通知会被解析成私聊消息）
+        auto form_type = jsonObj["form_type"].toInt();
+        auto chat_form = (form_type == int(ChatFormType::GROUP))
+            ? ChatFormType::GROUP : ChatFormType::PRIVATE;
         for (const QJsonValue& data : jsonObj["chat_datas"].toArray()) {
             auto msg_id = data["message_id"].toInt();
             auto unique_id = data["unique_id"].toString();
@@ -470,7 +475,7 @@ void TcpMgr::initHandlers()
             QString chat_time = data["chat_time"].toString();
             //通知包里没有 status 字段时 toInt() 默认返回 0（未读），正好符合语义
             int status = data["status"].toInt();
-            auto chat_data = std::make_shared<TextChatData>(msg_id, unique_id, thread_id, ChatFormType::PRIVATE,
+            auto chat_data = std::make_shared<TextChatData>(msg_id, unique_id, thread_id, chat_form,
                 ChatMsgType::TEXT, msg_content, sender, status, chat_time);
             chat_datas.push_back(chat_data);
         }

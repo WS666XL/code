@@ -817,6 +817,9 @@ void LogicSystem::DealChatTextMsg(std::shared_ptr<CSession> session, const short
 	//聊天线程 id：客户端打开会话前先通过 ID_CREATE_PRIVATE_CHAT_REQ 拿到
 	auto thread_id = root["thread_id"].asInt();
 	rtvalue["thread_id"] = thread_id;
+	//1018 回包与 1019 通知共用这份 JSON，把会话形式一起带给客户端
+	//（此前通知包漏带，客户端 1019 只能硬编码私聊，群消息会被解析成私聊消息）
+	rtvalue["form_type"] = form_type;
 
 	//把每条消息组织成 ChatMessage，统一落库
 	std::vector<std::shared_ptr<ChatMessage>> chat_datas;
