@@ -256,6 +256,7 @@ struct ChatThreadInfo {
     int _user1_id;     //私聊时对应 private_chat.user1_id；群聊时设为 0
     int _user2_id;     //私聊时对应 private_chat.user2_id；群聊时设为 0
     QString _group_name; //群聊时的群名（服务端 1026 回包 join group_chat 带出；私聊为空）
+    int _member_count = 0; //群聊成员数（服务端 1026 COUNT 子查询带出；私聊为 0）
     ChatThreadInfo() = default;
 };
 
@@ -293,6 +294,8 @@ public:
     bool IsGroup() const { return _form_type == ChatFormType::GROUP; }
     QString GetGroupName() const { return _group_name; }
     void SetGroupName(const QString& name) { _group_name = name; }
+    int GetMemberCount() const { return _member_count; }
+    void SetMemberCount(int count) { _member_count = count; }
 private:
     //如果是私聊，则为对方的id；如果是群聊，则为0
     int _other_id = 0;
@@ -301,6 +304,7 @@ private:
     //会话形式：私聊/群聊（决定气泡 role 判定、列表条目显示、消息发送的目标字段）
     ChatFormType _form_type = ChatFormType::PRIVATE;
     QString _group_name;     //群聊时的群名（会话条目/聊天页标题显示用）
+    int _member_count = 0;   //群聊成员数（条目显示"群名(N)"；私聊为 0）
     QString _last_msg;       //最后一条消息的文本，聊天列表条目显示用
     QString _last_msg_time;  //最后一条消息的时间（服务端 "yyyy-MM-dd HH:mm:ss" 格式）
     //缓存消息 map，抽象为基类指针，兼容以后图片等其他类型消息

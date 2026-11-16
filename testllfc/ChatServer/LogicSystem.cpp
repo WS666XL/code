@@ -369,6 +369,8 @@ void LogicSystem::GetUserThreadsHandler(std::shared_ptr<CSession> session,
 		thread_value["user2_id"] = thread->_user2_id;
 		//群聊带群名（客户端建群条目显示用；私聊为空串）
 		thread_value["group_name"] = thread->_group_name;
+		//群聊带成员数（条目显示"群名(N)"；私聊为 0）
+		thread_value["member_count"] = thread->_member_count;
 		rtvalue["threads"].append(thread_value);
 	}
 }

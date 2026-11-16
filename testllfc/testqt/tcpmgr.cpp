@@ -589,6 +589,8 @@ void TcpMgr::initHandlers()
             cti->_user2_id = value["user2_id"].toInt();
             //群聊时带群名（day41；私聊为空串）
             cti->_group_name = value["group_name"].toString();
+            //群聊成员数（条目显示"群名(N)"；私聊为 0）
+            cti->_member_count = value["member_count"].toInt();
             chat_threads.push_back(cti);
         }
 

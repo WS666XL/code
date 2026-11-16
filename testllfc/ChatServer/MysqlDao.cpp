@@ -508,21 +508,23 @@ bool MysqlDao::GetUserThreads(
 
 	try {
 		//群聊分支 join group_chat 带出群名（客户端 1026 建群条目要用）；
-		//私聊分支 group_name 给空串，两边列数对齐才能 UNION ALL
+		//成员数用 COUNT 子查询（条目显示"群名(N)"）；
+		//私聊分支 group_name 给空串、member_count 给 0，两边列数对齐才能 UNION ALL
 		std::string sql =
 			"WITH all_threads AS ( "
-			"  SELECT p.thread_id, 'private' AS type, p.user1_id, p.user2_id, '' AS group_name "
+			"  SELECT p.thread_id, 'private' AS type, p.user1_id, p.user2_id, '' AS group_name, 0 AS member_count "
 			"    FROM private_chat p "
 			"   WHERE (p.user1_id = ? OR p.user2_id = ?) "
 			"     AND p.thread_id > ? "
 			"  UNION ALL "
-			"  SELECT g.thread_id, 'group' AS type, 0 AS user1_id, 0 AS user2_id, gc.group_name "
+			"  SELECT g.thread_id, 'group' AS type, 0 AS user1_id, 0 AS user2_id, gc.group_name, "
+			"    (SELECT COUNT(*) FROM group_chat_member m WHERE m.thread_id = g.thread_id) AS member_count "
 			"    FROM group_chat_member g "
 			"    JOIN group_chat gc ON gc.thread_id = g.thread_id "
 			"   WHERE g.user_id = ? "
 			"     AND g.thread_id > ? "
 			") "
-			"SELECT thread_id, type, user1_id, user2_id, group_name "
+			"SELECT thread_id, type, user1_id, user2_id, group_name, member_count "
 			"  FROM all_threads "
 			" ORDER BY thread_id "
 			" LIMIT ?;";
@@ -550,6 +552,7 @@ bool MysqlDao::GetUserThreads(
 			cti->_user1_id = res->getInt64("user1_id");
 			cti->_user2_id = res->getInt64("user2_id");
 			cti->_group_name = res->getString("group_name");
+			cti->_member_count = res->getInt("member_count");
 			tmp.push_back(cti);
 		}
 

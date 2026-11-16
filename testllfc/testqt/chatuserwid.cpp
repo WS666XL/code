@@ -24,9 +24,10 @@ void ChatUserWid::SetChatData(std::shared_ptr<ChatThreadData> chat_data) {
     }
 
     // ===== day41 群会话条目 =====
-    // 群聊：显示群名 + 固定的群头像（成员头像暂不拼装，头像区用资源图）
+    // 群聊：显示"群名(成员数)" + 固定的群头像（成员头像暂不拼装，头像区用资源图）
     if (_chat_data->IsGroup()) {
-        ui->user_name_lb->setText(_chat_data->GetGroupName());
+        ui->user_name_lb->setText(QString("%1(%2)").arg(_chat_data->GetGroupName())
+                                  .arg(_chat_data->GetMemberCount()));
         ui->icon_lb->setPixmap(LoadAvatarPixmap(":/res/head_4.jpg", ui->icon_lb->size()));
         ui->icon_lb->setScaledContents(true);
         ui->label->setText(_chat_data->GetLastMsgTime());

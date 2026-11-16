@@ -39,6 +39,7 @@ struct ChatThreadInfo {
 	int _user1_id;    //私聊时对应 private_chat.user1_id，群聊时设为 0
 	int _user2_id;    //私聊时对应 private_chat.user2_id，群聊时设为 0
 	std::string _group_name;  //群聊时对应 group_chat.group_name（私聊为空）——1026 回包带给客户端建群条目
+	int _member_count = 0;    //群聊成员数（私聊为 0）——客户端条目显示"群名(N)"用
 };
 
 //一条聊天消息（对应 chat_message 表）

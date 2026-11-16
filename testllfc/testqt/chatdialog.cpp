@@ -373,6 +373,7 @@ void ChatDialog::slot_create_group_rsp(bool success, int thread_id,
     auto chat_thread_data = std::make_shared<ChatThreadData>(0, thread_id, 0,
         ChatFormType::GROUP);
     chat_thread_data->SetGroupName(name);
+    chat_thread_data->SetMemberCount(member_count);
     UserMgr::GetInstance()->AddChatThreadData(chat_thread_data, 0);
 
     auto* chat_user_wid = new ChatUserWid();
@@ -872,6 +873,7 @@ void ChatDialog::slot_load_chat_thread(bool load_more, int last_thread_id,
             auto chat_thread_data = std::make_shared<ChatThreadData>(0, cti->_thread_id, 0,
                 ChatFormType::GROUP);
             chat_thread_data->SetGroupName(cti->_group_name);
+            chat_thread_data->SetMemberCount(cti->_member_count);
             UserMgr::GetInstance()->AddChatThreadData(chat_thread_data, 0);
 
             auto* chat_user_wid = new ChatUserWid();

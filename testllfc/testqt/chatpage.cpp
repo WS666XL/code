@@ -69,9 +69,10 @@ void ChatPage::SetChatData(std::shared_ptr<ChatThreadData> chat_data) {
         return;
     }
 
-    // day41：群会话标题显示群名；私聊显示对方昵称/uid
+    // day41：群会话标题显示"群名(成员数)"；私聊显示对方昵称/uid
     if (_chat_data->IsGroup()) {
-        ui->title_lb->setText(_chat_data->GetGroupName());
+        ui->title_lb->setText(QString("%1(%2)").arg(_chat_data->GetGroupName())
+                              .arg(_chat_data->GetMemberCount()));
     }
     else {
         auto other_id = _chat_data->GetOtherId();
