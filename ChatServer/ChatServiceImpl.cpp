@@ -1,4 +1,5 @@
 #include "ChatServiceImpl.h"
+#include "Logger.h"
 #include "UserMgr.h"
 #include "CSession.h"
 #include "CServer.h"
@@ -182,7 +183,7 @@ Status ChatServiceImpl::NotifyAvatarUpdate(::grpc::ServerContext* context,
 	for (auto& session : sessions) {
 		session->Send(return_str, ID_NOTIFY_AVATAR_UPDATE_REQ);
 	}
-	std::cout << "avatar update notify pushed to " << sessions.size()
+	LLOG_INFO << "avatar update notify pushed to " << sessions.size()
 		<< " online sessions, uid=" << uid << std::endl;
 	return Status::OK;
 }
@@ -205,7 +206,7 @@ bool ChatServiceImpl::GetBaseInfo(std::string base_key, int uid, std::shared_ptr
 		userinfo->desc = root["desc"].asString();
 		userinfo->sex = root["sex"].asInt();
 		userinfo->icon = root["icon"].asString();
-		std::cout << "user login uid is  " << userinfo->uid << " name  is "
+		LLOG_INFO << "user login uid is  " << userinfo->uid << " name  is "
 			<< userinfo->name << " pwd is " << userinfo->pwd << " email is " << userinfo->email << endl;
 	}
 	else {
@@ -241,7 +242,7 @@ Status ChatServiceImpl::NotifyKickUser(::grpc::ServerContext* context,
 	//查找用户是否在本服务器
 	auto uid = request->uid();
 	auto session = UserMgr::GetInstance()->GetSession(uid);
-	std::cout << "NotifyKickUser rpc received, uid=" << uid << " session="
+	LLOG_INFO << "NotifyKickUser rpc received, uid=" << uid << " session="
 		<< (session ? "found" : "null") << std::endl;
 
 	Defer defer([request, reply]() {

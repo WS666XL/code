@@ -1,5 +1,6 @@
 // CServer.cpp —— 监听类 CServer 的实现
 #include "CServer.h"
+#include "Logger.h"
 #include"HttpConnection.h"
 #include"AsioIOServicePool.h"
 // 初始化列表：保存 ioc / 创建监听器（绑定 IPv4 指定端口并监听）/ 创建 socket
@@ -29,7 +30,7 @@ void CServer::Start()
         }
         catch (std::exception& exp) {
             // 异常兜底，打印后继续监听
-            std::cout << "exception is " << exp.what() << std::endl;
+            LLOG_INFO << "exception is " << exp.what() << std::endl;
             self->Start();
         }
         });

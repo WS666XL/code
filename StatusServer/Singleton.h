@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include "Logger.h"
 #include <mutex>
 #include <iostream>
 using namespace std;
@@ -21,10 +22,10 @@ public:
 		return _instance;
 	}
 	void PrintAddress() {
-		std::cout << _instance.get() << endl;
+		LLOG_INFO << _instance.get() << endl;
 	}
 	~Singleton() {
-		std::cout << "this is singleton destruct" << std::endl;
+		LLOG_INFO << "this is singleton destruct" << std::endl;
 	}
 };
 

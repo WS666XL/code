@@ -1,4 +1,5 @@
 #include "resetdialog.h"
+#include "Logger.h"
 #include "ui_resetdialog.h"
 #include <QDebug>
 #include <QRegularExpression>
@@ -43,13 +44,13 @@ ResetDialog::~ResetDialog()
 
 void ResetDialog::on_return_btn_clicked()
 {
-    qDebug() << "sure btn clicked ";
+    LLOG_DEBUG << "sure btn clicked ";
     emit switchLogin();
 }
 
 void ResetDialog::on_varify_btn_clicked()
 {
-    qDebug()<<"receive varify btn clicked ";
+    LLOG_DEBUG << "receive varify btn clicked ";
     auto email = ui->email_edit->text();
     auto bcheck = checkEmailValid();
     if(!bcheck){
@@ -188,7 +189,7 @@ void ResetDialog::initHandlers()
         }
         auto email = jsonObj["email"].toString();
         showTip(tr("验证码已发送到邮箱，注意查收"), true);
-        qDebug()<< "email is " << email ;
+        LLOG_DEBUG << "email is " << email ;
     });
 
     //注册注册用户回包逻辑
@@ -200,8 +201,8 @@ void ResetDialog::initHandlers()
         }
         auto email = jsonObj["email"].toString();
         showTip(tr("重置成功,点击返回登录"), true);
-        qDebug()<< "email is " << email ;
-        qDebug()<< "user uuid is " <<  jsonObj["uid"].toString();
+        LLOG_DEBUG << "email is " << email ;
+        LLOG_DEBUG << "user uuid is " <<  jsonObj["uid"].toString();
     });
 }
 

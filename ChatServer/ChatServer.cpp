@@ -1,4 +1,4 @@
-﻿// ChatServer.cpp : 此文件包含 "main" 函数。程序执行将在此处开始并结束。
+// ChatServer.cpp : 此文件包含 "main" 函数。程序执行将在此处开始并结束。
 //
 
 #include "LogicSystem.h"
@@ -10,6 +10,7 @@
 #include "ConfigMgr.h"
 #include"RedisMgr.h"
 #include"ChatServiceImpl.h"
+#include "Logger.h"
 using namespace std;
 bool bstop = false;
 std::condition_variable cond_quit;
@@ -19,6 +20,8 @@ int main()
 {
 	auto& cfg = ConfigMgr::Inst();
 	auto server_name = cfg["SelfServer"]["Name"];
+	// 日志：控制台 + logs/<服务名>.log，级别/目录可在 config.ini 的 [Log] 里改
+	xulei::Logger::Init(server_name, cfg["Log"]["Path"], cfg["Log"]["Level"]);
 	try {
 		auto pool = AsioIOServicePool::GetInstance();
 		//将登录数设置为0
@@ -34,7 +37,7 @@ int main()
 		builder.RegisterService(&service);
 		// 构建并启动gRPC服务器
 		std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
-		std::cout << "RPC Server listening on " << server_address << std::endl;
+		LLOG_INFO << "RPC Server listening on " << server_address << std::endl;
 
 		//单独启动一个线程处理grpc服务
 		std::thread  grpc_server_thread([&server]() {
@@ -61,7 +64,7 @@ int main()
 		grpc_server_thread.join();
 	}
 	catch (std::exception& e) {
-		std::cerr << "Exception: " << e.what() << endl;
+		LLOG_ERROR << "Exception: " << e.what() << endl;
 	}
 
 }

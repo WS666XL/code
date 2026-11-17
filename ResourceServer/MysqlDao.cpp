@@ -1,4 +1,5 @@
 #include "MysqlDao.h"
+#include "Logger.h"
 #include "ConfigMgr.h"
 
 MysqlDao::MysqlDao()
@@ -51,9 +52,9 @@ std::shared_ptr<UserInfo> MysqlDao::GetUser(int uid)
 		return user_ptr;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return nullptr;
 	}
 }
@@ -82,14 +83,14 @@ bool MysqlDao::UpdateHeadInfo(int uid, const std::string& icon)
 		int affected_rows = pstmt->executeUpdate();
 		// 检查是否找到并更新了记录
 		if (affected_rows == 0) {
-			std::cerr << "No user found with uid: " << uid << std::endl;
+			LLOG_ERROR << "No user found with uid: " << uid << std::endl;
 			return false;
 		}
 
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException in UpdateHeadInfo: " << e.what() << std::endl;
+		LLOG_ERROR << "SQLException in UpdateHeadInfo: " << e.what() << std::endl;
 		return false;
 	}
 }
@@ -126,7 +127,7 @@ std::shared_ptr<ChatMessage> MysqlDao::GetChatMsgById(int message_id)
 		return msg_ptr;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException in GetChatMsgById: " << e.what() << std::endl;
+		LLOG_ERROR << "SQLException in GetChatMsgById: " << e.what() << std::endl;
 		return nullptr;
 	}
 }
@@ -154,14 +155,14 @@ bool MysqlDao::UpdateUploadStatus(int chat_message_id)
 
 		int affected_rows = pstmt->executeUpdate();
 		if (affected_rows == 0) {
-			std::cerr << "No chat message found with message_id: " << chat_message_id << std::endl;
+			LLOG_ERROR << "No chat message found with message_id: " << chat_message_id << std::endl;
 			return false;
 		}
 
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException in UpdateUploadStatus: " << e.what() << std::endl;
+		LLOG_ERROR << "SQLException in UpdateUploadStatus: " << e.what() << std::endl;
 		return false;
 	}
 }

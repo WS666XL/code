@@ -1,4 +1,5 @@
 #include "FileSystem.h"
+#include "Logger.h"
 #include "ConfigMgr.h"
 #include "CSession.h"
 #include "base64.h"
@@ -64,7 +65,7 @@ void FileWorker::task_callback(std::shared_ptr<FileTask> task)
 {
 	auto call_back_iter = _handlers.find(task->_msgid);
 	if (call_back_iter == _handlers.end()) {
-		std::cout << "file msg id [" << task->_msgid << "] handler not found" << std::endl;
+		LLOG_INFO << "file msg id [" << task->_msgid << "] handler not found" << std::endl;
 		return;
 	}
 	call_back_iter->second(task);
@@ -94,19 +95,19 @@ void FileWorker::RegisterHandlers()
 
 
 		if (!outfile) {
-			std::cerr << "无法打开文件进行写入。" << std::endl;
+			LLOG_ERROR << "无法打开文件进行写入。" << std::endl;
 			return;
 		}
 
 		outfile.write(decoded.data(), decoded.size());
 		if (!outfile) {
-			std::cerr << "写入文件失败。" << std::endl;
+			LLOG_ERROR << "写入文件失败。" << std::endl;
 			return;
 		}
 
 		outfile.close();
 		if (last) {
-			std::cout << "文件已成功保存为: " << task->_name
+			LLOG_INFO << "文件已成功保存为: " << task->_name
 				<< " total_size=" << task->_total_size << std::endl;
 		}
 	};
@@ -134,7 +135,7 @@ void FileWorker::RegisterHandlers()
 		boost::filesystem::path dir_path = boost::filesystem::path(file_path_str).parent_path();
 		if (!boost::filesystem::exists(dir_path)) {
 			if (!boost::filesystem::create_directories(dir_path)) {
-				std::cerr << "Failed to create directory: " << dir_path.string() << std::endl;
+				LLOG_ERROR << "Failed to create directory: " << dir_path.string() << std::endl;
 				result["error"] = ErrorCodes::FileWritePermissionFailed;
 				if (task->_callback) {
 					task->_callback(result);
@@ -157,7 +158,7 @@ void FileWorker::RegisterHandlers()
 		}
 
 		if (!outfile) {
-			std::cerr << "1031 无法打开续传文件: " << part_path << std::endl;
+			LLOG_ERROR << "1031 无法打开续传文件: " << part_path << std::endl;
 			result["error"] = ErrorCodes::FileWritePermissionFailed;
 			if (task->_callback) {
 				task->_callback(result);
@@ -168,7 +169,7 @@ void FileWorker::RegisterHandlers()
 		outfile.write(decoded.data(), decoded.size());
 		outfile.close();
 		if (!outfile) {
-			std::cerr << "1031 写入续传文件失败: " << part_path << std::endl;
+			LLOG_ERROR << "1031 写入续传文件失败: " << part_path << std::endl;
 			result["error"] = ErrorCodes::FileWritePermissionFailed;
 			if (task->_callback) {
 				task->_callback(result);
@@ -187,7 +188,7 @@ void FileWorker::RegisterHandlers()
 		boost::system::error_code ec;
 		auto part_size = boost::filesystem::file_size(part_path, ec);
 		if (ec || (int64_t)part_size != (int64_t)task->_total_size) {
-			std::cerr << "1031 续传文件大小不匹配: got "
+			LLOG_ERROR << "1031 续传文件大小不匹配: got "
 				<< (ec ? std::string("error") : std::to_string(part_size))
 				<< " expect " << task->_total_size << " (" << part_path << ")" << std::endl;
 			// 比预期大说明数据坏了（重复块），直接删掉让客户端重传；比预期小则保留 .part 等续传
@@ -210,7 +211,7 @@ void FileWorker::RegisterHandlers()
 			boost::filesystem::rename(part_path, file_path_str, ec);
 		}
 		if (ec) {
-			std::cerr << "1031 发布头像失败: " << file_path_str
+			LLOG_ERROR << "1031 发布头像失败: " << file_path_str
 				<< " err=" << ec.message() << std::endl;
 			result["error"] = ErrorCodes::FileWritePermissionFailed;
 			if (task->_callback) {
@@ -219,7 +220,7 @@ void FileWorker::RegisterHandlers()
 			return;
 		}
 
-		std::cout << "头像已成功保存为: " << file_path_str << std::endl;
+		LLOG_INFO << "头像已成功保存为: " << file_path_str << std::endl;
 
 		//最后一块落盘完成后：更新 MySQL user.icon
 		MysqlMgr::GetInstance()->UpdateUserIcon(task->_uid, filename);
@@ -278,7 +279,7 @@ void FileWorker::RegisterHandlers()
 		//发送者 uid 子目录不存在则创建（该用户第一次发图时）
 		if (!boost::filesystem::exists(dir_path)) {
 			if (!boost::filesystem::create_directories(dir_path)) {
-				std::cerr << "Failed to create directory: " << dir_path.string() << std::endl;
+				LLOG_ERROR << "Failed to create directory: " << dir_path.string() << std::endl;
 				result["error"] = ErrorCodes::FileWritePermissionFailed;
 				return;
 			}
@@ -298,7 +299,7 @@ void FileWorker::RegisterHandlers()
 		}
 
 		if (!outfile) {
-			std::cerr << "1037 无法打开续传文件: " << part_path << std::endl;
+			LLOG_ERROR << "1037 无法打开续传文件: " << part_path << std::endl;
 			result["error"] = ErrorCodes::FileWritePermissionFailed;
 			return;
 		}
@@ -306,7 +307,7 @@ void FileWorker::RegisterHandlers()
 		outfile.write(decoded.data(), decoded.size());
 		outfile.close();
 		if (!outfile) {
-			std::cerr << "1037 写入续传文件失败: " << part_path << std::endl;
+			LLOG_ERROR << "1037 写入续传文件失败: " << part_path << std::endl;
 			result["error"] = ErrorCodes::FileWritePermissionFailed;
 			return;
 		}
@@ -319,7 +320,7 @@ void FileWorker::RegisterHandlers()
 		boost::system::error_code ec;
 		auto part_size = boost::filesystem::file_size(part_path, ec);
 		if (ec || (int64_t)part_size != (int64_t)task->_total_size) {
-			std::cerr << "1037 续传文件大小不匹配: got "
+			LLOG_ERROR << "1037 续传文件大小不匹配: got "
 				<< (ec ? std::string("error") : std::to_string(part_size))
 				<< " expect " << task->_total_size << " (" << part_path << ")" << std::endl;
 			if (!ec && (int64_t)part_size > (int64_t)task->_total_size) {
@@ -335,12 +336,12 @@ void FileWorker::RegisterHandlers()
 			boost::filesystem::rename(part_path, file_path_str, ec);
 		}
 		if (ec) {
-			std::cerr << "1037 发布聊天资源失败: " << file_path_str
+			LLOG_ERROR << "1037 发布聊天资源失败: " << file_path_str
 				<< " err=" << ec.message() << std::endl;
 			return;
 		}
 
-		std::cout << "聊天图片已成功保存为: " << file_path_str
+		LLOG_INFO << "聊天图片已成功保存为: " << file_path_str
 			<< " message_id=" << task->_chat_msg_id << std::endl;
 
 		//文件完整落盘：把图片消息状态置为已上传
@@ -410,7 +411,7 @@ void DownloadWorker::task_callback(std::shared_ptr<DownloadTask> task)
 
 	std::ifstream infile(task->_path, std::ios::binary);
 	if (!infile) {
-		std::cerr << "download file not exists: " << task->_path << std::endl;
+		LLOG_ERROR << "download file not exists: " << task->_path << std::endl;
 		result["error"] = ErrorCodes::FileNotExists;
 		if (task->_callback) {
 			task->_callback(result);
@@ -432,12 +433,12 @@ void DownloadWorker::task_callback(std::shared_ptr<DownloadTask> task)
 		file_info->_trans_size = 0;
 		// 新下载：覆盖旧进度（同一个文件可能上次只下到一半）
 		RedisMgr::GetInstance()->SetDownloadInfo(task->_key, file_info);
-		std::cout << "[新下载] " << task->_name << " size=" << total_size << std::endl;
+		LLOG_INFO << "[新下载] " << task->_name << " size=" << total_size << std::endl;
 	}
 	else {
 		file_info = RedisMgr::GetInstance()->GetDownloadInfo(task->_key);
 		if (file_info == nullptr) {
-			std::cerr << "断点续传失败，Redis 无下载信息: " << task->_key << std::endl;
+			LLOG_ERROR << "断点续传失败，Redis 无下载信息: " << task->_key << std::endl;
 			result["error"] = ErrorCodes::RedisReadErr;
 			if (task->_callback) {
 				task->_callback(result);
@@ -445,7 +446,7 @@ void DownloadWorker::task_callback(std::shared_ptr<DownloadTask> task)
 			return;
 		}
 		if (task->_seq != file_info->_seq) {
-			std::cerr << "下载序号不匹配: expect " << file_info->_seq
+			LLOG_ERROR << "下载序号不匹配: expect " << file_info->_seq
 				<< " got " << task->_seq << " (" << task->_key << ")" << std::endl;
 			result["error"] = ErrorCodes::FileSeqInvalid;
 			if (task->_callback) {
@@ -458,7 +459,7 @@ void DownloadWorker::task_callback(std::shared_ptr<DownloadTask> task)
 	// 计算偏移量：seq 从 1 开始，偏移 = (seq-1) * 32KB
 	std::streamsize offset = ((std::streamsize)task->_seq - 1) * FILE_CHUNK_LEN;
 	if (offset >= file_info->_total_size) {
-		std::cerr << "下载偏移越界: offset=" << offset
+		LLOG_ERROR << "下载偏移越界: offset=" << offset
 			<< " total=" << file_info->_total_size << std::endl;
 		result["error"] = ErrorCodes::FileOffsetInvalid;
 		if (task->_callback) {
@@ -493,7 +494,7 @@ void DownloadWorker::task_callback(std::shared_ptr<DownloadTask> task)
 	if (is_last) {
 		// 整份文件发完：删掉下载进度（下次下载重新从 seq=1 开始）
 		RedisMgr::GetInstance()->DelDownloadInfo(task->_key);
-		std::cout << "文件下载完成: " << task->_path << std::endl;
+		LLOG_INFO << "文件下载完成: " << task->_path << std::endl;
 	}
 	else {
 		// 记录下一块序号与已读字节数，供暂停/断线后续传
@@ -515,7 +516,7 @@ FileSystem::~FileSystem()
 void FileSystem::PostMsgToQue(shared_ptr<FileTask> msg, int index)
 {
 	// 临时调试：入队时打印 worker 编号与块序号
-	std::cout << "worker[" << index << "] post seq=" << msg->_seq << std::endl;
+	LLOG_INFO << "worker[" << index << "] post seq=" << msg->_seq << std::endl;
 	_file_workers[index]->PostTask(msg);
 }
 

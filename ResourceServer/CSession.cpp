@@ -1,4 +1,5 @@
 #include "CSession.h"
+#include "Logger.h"
 #include "CServer.h"
 #include <iostream>
 #include <sstream>
@@ -16,7 +17,7 @@ CSession::CSession(boost::asio::io_context& io_context, CServer* server):
 	_recv_head_node = make_shared<MsgNode>(HEAD_TOTAL_LEN);
 }
 CSession::~CSession() {
-	std::cout << "~CSession destruct" << endl;
+	LLOG_INFO << "~CSession destruct" << endl;
 }
 
 tcp::socket& CSession::GetSocket() {
@@ -57,14 +58,14 @@ void CSession::AsyncReadHead(int total_len)
 	asyncReadFull(HEAD_TOTAL_LEN, [self, this](const boost::system::error_code& ec, std::size_t bytes_transfered) {
 		try {
 			if (ec) {
-				std::cout << "handle read failed, error is " << ec.message() << endl;
+				LLOG_INFO << "handle read failed, error is " << ec.message() << endl;
 				Close();
 				_server->ClearSession(_session_id);
 				return;
 			}
 
 			if (bytes_transfered < HEAD_TOTAL_LEN) {
-				std::cout << "read length not match, read [" << bytes_transfered << "] , total ["
+				LLOG_INFO << "read length not match, read [" << bytes_transfered << "] , total ["
 					<< HEAD_TOTAL_LEN << "]" << endl;
 				Close();
 				_server->ClearSession(_session_id);
@@ -79,18 +80,18 @@ void CSession::AsyncReadHead(int total_len)
 			memcpy(&msg_id, _recv_head_node->_data, HEAD_ID_LEN);
 			//网络字节序转化为本地字节序
 			msg_id = boost::asio::detail::socket_ops::network_to_host_short(msg_id);
-			std::cout << "msg_id is " << msg_id << endl;
+			LLOG_INFO << "msg_id is " << msg_id << endl;
 
 			//获取头部数据长度（4 字节：文件分块包体较大）
 			int msg_len = 0;
 			memcpy(&msg_len, _recv_head_node->_data + HEAD_ID_LEN, HEAD_DATA_LEN);
 			//网络字节序转化为本地字节序
 			msg_len = boost::asio::detail::socket_ops::network_to_host_long(msg_len);
-			std::cout << "msg_len is " << msg_len << endl;
+			LLOG_INFO << "msg_len is " << msg_len << endl;
 
 			//长度非法直接断开，防止恶意超大包
 			if (msg_len > MAX_LENGTH) {
-				std::cout << "invalid data length is " << msg_len << endl;
+				LLOG_INFO << "invalid data length is " << msg_len << endl;
 				_server->ClearSession(_session_id);
 				return;
 			}
@@ -99,7 +100,7 @@ void CSession::AsyncReadHead(int total_len)
 			AsyncReadBody(msg_len);
 		}
 		catch (std::exception& e) {
-			std::cout << "Exception code is " << e.what() << endl;
+			LLOG_INFO << "Exception code is " << e.what() << endl;
 		}
 		});
 }
@@ -108,7 +109,7 @@ void CSession::Send(std::string msg, short msgid) {
 	std::lock_guard<std::mutex> lock(_send_lock);
 	int send_que_size = _send_que.size();
 	if (send_que_size > MAX_SENDQUE) {
-		std::cout << "session: " << _session_id << " send que fulled, size is " << MAX_SENDQUE << endl;
+		LLOG_INFO << "session: " << _session_id << " send que fulled, size is " << MAX_SENDQUE << endl;
 		return;
 	}
 
@@ -125,7 +126,7 @@ void CSession::Send(char* msg, int max_length, short msgid) {
 	std::lock_guard<std::mutex> lock(_send_lock);
 	int send_que_size = _send_que.size();
 	if (send_que_size > MAX_SENDQUE) {
-		std::cout << "session: " << _session_id << " send que fulled, size is " << MAX_SENDQUE << endl;
+		LLOG_INFO << "session: " << _session_id << " send que fulled, size is " << MAX_SENDQUE << endl;
 		return;
 	}
 
@@ -153,14 +154,14 @@ void CSession::AsyncReadBody(int total_len)
 	asyncReadFull(total_len, [self, this, total_len](const boost::system::error_code& ec, std::size_t bytes_transfered) {
 		try {
 			if (ec) {
-				std::cout << "handle read failed, error is " << ec.message() << endl;
+				LLOG_INFO << "handle read failed, error is " << ec.message() << endl;
 				Close();
 				_server->ClearSession(_session_id);
 				return;
 			}
 
 			if (bytes_transfered < total_len) {
-				std::cout << "read length not match, read [" << bytes_transfered << "] , total ["
+				LLOG_INFO << "read length not match, read [" << bytes_transfered << "] , total ["
 					<< total_len<<"]" << endl;
 				Close();
 				_server->ClearSession(_session_id);
@@ -180,7 +181,7 @@ void CSession::AsyncReadBody(int total_len)
 			AsyncReadHead(HEAD_TOTAL_LEN);
 		}
 		catch (std::exception& e) {
-			std::cout << "Exception code is " << e.what() << endl;
+			LLOG_INFO << "Exception code is " << e.what() << endl;
 		}
 		});
 }
@@ -199,13 +200,13 @@ void CSession::HandleWrite(const boost::system::error_code& error, std::shared_p
 			}
 		}
 		else {
-			std::cout << "handle write failed, error is " << error.message() << endl;
+			LLOG_INFO << "handle write failed, error is " << error.message() << endl;
 			Close();
 			_server->ClearSession(_session_id);
 		}
 	}
 	catch (std::exception& e) {
-		std::cerr << "Exception code : " << e.what() << endl;
+		LLOG_ERROR << "Exception code : " << e.what() << endl;
 	}
 
 }

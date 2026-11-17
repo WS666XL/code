@@ -5,6 +5,7 @@
 #include "AsioIOServicePool.h"
 #include "CServer.h"
 #include "ConfigMgr.h"
+#include "Logger.h"
 #include <boost/filesystem.hpp>
 
 using namespace std;
@@ -16,6 +17,8 @@ int main()
 {
 	auto& cfg = ConfigMgr::Inst();
 	auto server_name = cfg["SelfServer"]["Name"];
+	// 日志：控制台 + logs/<服务名>.log
+	xulei::Logger::Init(server_name, cfg["Log"]["Path"], cfg["Log"]["Level"]);
 
 	std::shared_ptr<AsioIOServicePool> pool = nullptr;
 	try {
@@ -35,7 +38,7 @@ int main()
 		if (pool) {
 			pool->Stop();
 		}
-		std::cerr << "Exception: " << e.what() << endl;
+		LLOG_ERROR << "Exception: " << e.what() << endl;
 	}
 
 }

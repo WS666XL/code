@@ -1,4 +1,5 @@
 #include "friendlabel.h"
+#include "Logger.h"
 #include "ui_friendlabel.h"
 #include <QDebug>
 
@@ -27,12 +28,12 @@ void FriendLabel::SetText(QString text)
     auto textWidth = fontMetrics.horizontalAdvance(ui->tip_lb->text()); // 获取文本的宽度
     auto textHeight = fontMetrics.height(); // 获取文本的高度
 
-    qDebug()<< " ui->tip_lb.width() is " << ui->tip_lb->width();
-    qDebug()<< " ui->close_lb->width() is " << ui->close_lb->width();
-    qDebug()<< " textWidth is " << textWidth;
+    LLOG_DEBUG << " ui->tip_lb.width() is " << ui->tip_lb->width();
+    LLOG_DEBUG << " ui->close_lb->width() is " << ui->close_lb->width();
+    LLOG_DEBUG << " textWidth is " << textWidth;
     this->setFixedWidth(ui->tip_lb->width()+ui->close_lb->width()+5);
     this->setFixedHeight(textHeight+2);
-    qDebug()<< "  this->setFixedHeight " << this->height();
+    LLOG_DEBUG << "  this->setFixedHeight " << this->height();
     _width = this->width();
     _height = this->height();
 }

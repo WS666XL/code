@@ -1,4 +1,5 @@
 #include "chatpage.h"
+#include "Logger.h"
 #include "ui_chatpage.h"
 #include<QStyleOption>
 #include<QPainter>
@@ -919,7 +920,7 @@ void ChatPage::paintEvent(QPaintEvent *event)
 void ChatPage::on_send_btn_clicked()
 {
     if (_chat_data == nullptr) {
-        qDebug() << "friend_info is empty";
+        LLOG_DEBUG << "friend_info is empty";
         return;
     }
 
@@ -1113,7 +1114,7 @@ void ChatPage::on_send_btn_clicked()
 
     //把剩余攒着的文本发出去（txt_size>0 说明这一轮至少有一条文本）
     if (txt_size > 0) {
-        qDebug() << "textArray is " << textArray;
+        LLOG_DEBUG << "textArray is " << textArray;
         //发送给服务器
         textObj["text_array"] = textArray;
         textObj["fromuid"] = user_info->_uid;

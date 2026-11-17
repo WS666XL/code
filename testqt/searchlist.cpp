@@ -1,4 +1,5 @@
 #include "searchlist.h"
+#include "Logger.h"
 #include<QScrollBar>
 #include "adduseritem.h"
 //#include "invaliditem.h"
@@ -56,7 +57,7 @@ void SearchList::addTipItem()
 {
     auto *invalid_item = new QWidget();
     QListWidgetItem *item_tmp = new QListWidgetItem;
-    //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
+    //LLOG_DEBUG << "chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
     item_tmp->setSizeHint(QSize(250,10));
     this->addItem(item_tmp);
     invalid_item->setObjectName("invalid_item");
@@ -66,7 +67,7 @@ void SearchList::addTipItem()
 
     auto *add_user_item = new AddUserItem();
     QListWidgetItem *item = new QListWidgetItem;
-    //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
+    //LLOG_DEBUG << "chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
     item->setSizeHint(add_user_item->sizeHint());
     this->addItem(item);
     this->setItemWidget(item, add_user_item);
@@ -76,20 +77,20 @@ void SearchList::slot_item_clicked(QListWidgetItem *item)
 {
     QWidget *widget = this->itemWidget(item); //获取自定义widget对象
     if(!widget){
-        qDebug()<< "slot item clicked widget is nullptr";
+        LLOG_DEBUG << "slot item clicked widget is nullptr";
         return;
     }
 
     // 对自定义widget进行操作， 将item 转化为基类ListItemBase
     ListItemBase *customItem = qobject_cast<ListItemBase*>(widget);
     if(!customItem){
-        qDebug()<< "slot item clicked widget is nullptr";
+        LLOG_DEBUG << "slot item clicked widget is nullptr";
         return;
     }
 
     auto itemType = customItem->GetItemType();
     if(itemType == ListItemType::INVALID_ITEM){
-        qDebug()<< "slot invalid item clicked ";
+        LLOG_DEBUG << "slot invalid item clicked ";
         return;
     }
 
@@ -100,7 +101,7 @@ void SearchList::slot_item_clicked(QListWidgetItem *item)
         }
         if(!_search_edit)
         {
-            qDebug()<<"_search_edit为空";
+            LLOG_DEBUG << "_search_edit为空";
             return;
         }
         waitPending(true);

@@ -1,4 +1,5 @@
 #include "LogicSystem.h"
+#include "Logger.h"
 #include "StatusGrpcClient.h"
 #include "MysqlMgr.h"
 #include "const.h"
@@ -47,7 +48,7 @@ void LogicSystem::DealMsg() {
 		if (_b_stop ) {
 			while (!_msg_que.empty()) {
 				auto msg_node = _msg_que.front();
-				cout << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
+				LLOG_INFO << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
 				auto call_back_iter = _fun_callbacks.find(msg_node->_recvnode->_msg_id);
 				if (call_back_iter == _fun_callbacks.end()) {
 					_msg_que.pop();
@@ -62,11 +63,11 @@ void LogicSystem::DealMsg() {
 
 		//如果没有停服，且说明队列中有数据
 		auto msg_node = _msg_que.front();
-		cout << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
+		LLOG_INFO << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
 		auto call_back_iter = _fun_callbacks.find(msg_node->_recvnode->_msg_id);
 		if (call_back_iter == _fun_callbacks.end()) {
 			_msg_que.pop();
-			std::cout << "msg id [" << msg_node->_recvnode->_msg_id << "] handler not found" << std::endl;
+			LLOG_INFO << "msg id [" << msg_node->_recvnode->_msg_id << "] handler not found" << std::endl;
 			continue;
 		}
 		call_back_iter->second(msg_node->_session, msg_node->_recvnode->_msg_id, 
@@ -130,7 +131,7 @@ bool LogicSystem::GetBaseInfo(std::string base_key, int uid, std::shared_ptr<Use
 		userinfo->desc = root["desc"].asString();
 		userinfo->sex = root["sex"].asInt();
 		userinfo->icon = root["icon"].asString();
-		std::cout << "user login uid is  " << userinfo->uid << " name  is "
+		LLOG_INFO << "user login uid is  " << userinfo->uid << " name  is "
 			<< userinfo->name << " pwd is " << userinfo->pwd << " email is " << userinfo->email << endl;
 	}
 	else {
@@ -175,7 +176,7 @@ void LogicSystem::LoginHandler(shared_ptr<CSession> session, const short &msg_id
 	reader.parse(msg_data, root);
 	auto uid = root["uid"].asInt();
 	auto token = root["token"].asString();
-	std::cout << "user login uid is  " << uid << " user token  is "<<
+	LLOG_INFO << "user login uid is  " << uid << " user token  is "<<
 		token<< endl;
 	//从状态服务器获取token匹配是否准确
 	/*auto rsp = StatusGrpcClient::GetInstance()->Login(uid, root["token"].asString());
@@ -289,7 +290,7 @@ void LogicSystem::LoginHandler(shared_ptr<CSession> session, const short &msg_id
 		std::string uid_ip_value = "";
 		auto uid_ip_key = USERIPPREFIX + uid_str;
 		bool b_ip = RedisMgr::GetInstance()->Get(uid_ip_key, uid_ip_value);
-		std::cout << "kick check: GET " << uid_ip_key << " -> [" << uid_ip_value
+		LLOG_INFO << "kick check: GET " << uid_ip_key << " -> [" << uid_ip_value
 			<< "]  self=" << server_name << std::endl;
 		//说明用户已经登录了，此处应该踢掉之前的用户登录状态
 		if (b_ip) {
@@ -298,7 +299,7 @@ void LogicSystem::LoginHandler(shared_ptr<CSession> session, const short &msg_id
 			auto self_name = cfg["SelfServer"]["Name"];
 			//如果之前登录的节点和当前相同，则直接在本服务器踢掉旧连接
 			if (uid_ip_value == self_name) {
-				std::cout << "kick: same server, clearing local old session" << std::endl;
+				LLOG_INFO << "kick: same server, clearing local old session" << std::endl;
 				//查找旧有的连接
 				auto old_session = UserMgr::GetInstance()->GetSession(uid);
 
@@ -307,13 +308,13 @@ void LogicSystem::LoginHandler(shared_ptr<CSession> session, const short &msg_id
 					old_session->NotifyOffline(uid);
 					//清除旧的连接
 					_p_server->ClearSession(old_session->GetSessionId());
-					std::cout << "kick: local old session kicked" << std::endl;
+					LLOG_INFO << "kick: local old session kicked" << std::endl;
 				}
 
 			}
 			else {
 				//如果之前登录在另一台节点，则通过 gRPC 通知那台节点踢掉
-				std::cout << "kick: cross server, notifying [" << uid_ip_value << "]" << std::endl;
+				LLOG_INFO << "kick: cross server, notifying [" << uid_ip_value << "]" << std::endl;
 				KickUserReq kick_req;
 				kick_req.set_uid(uid);
 				ChatGrpcClient::GetInstance()->NotifyKickUser(uid_ip_value, kick_req);
@@ -341,7 +342,7 @@ void LogicSystem::HeartBeatHandler(std::shared_ptr<CSession> session, const shor
 	Json::Value root;
 	reader.parse(msg_data, root);
 	auto uid = root["fromuid"].asInt();
-	std::cout << "receive heart beat msg, uid is " << uid << std::endl;
+	LLOG_INFO << "receive heart beat msg, uid is " << uid << std::endl;
 	Json::Value  rtvalue;
 	rtvalue["error"] = ErrorCodes::Success;
 	session->Send(rtvalue.toStyledString(), ID_HEARTBEAT_RSP);
@@ -358,7 +359,7 @@ void LogicSystem::GetUserThreadsHandler(std::shared_ptr<CSession> session,
 	reader.parse(msg_data, root);
 	auto uid = root["uid"].asInt();
 	int last_id = root["thread_id"].asInt();
-	std::cout << "get uid  threads  " << uid << std::endl;
+	LLOG_INFO << "get uid  threads  " << uid << std::endl;
 
 	Json::Value  rtvalue;
 	rtvalue["error"] = ErrorCodes::Success;
@@ -489,7 +490,7 @@ void LogicSystem::SearchInfo(shared_ptr<CSession >session, const short& msg_id, 
 	Json::Value root;
 	reader.parse(msg_data, root);
 	auto uid_str = root["uid"].asString();
-	std::cout << "user SearchInfo uid is  " << uid_str << endl;
+	LLOG_INFO << "user SearchInfo uid is  " << uid_str << endl;
 
 	Json::Value  rtvalue;
 
@@ -516,7 +517,7 @@ void LogicSystem::AddFriendApply(shared_ptr<CSession> session, const short& msg_
 	auto applyname = root["applyname"].asString();
 	auto bakname = root["bakname"].asString();
 	auto touid = root["touid"].asInt();
-	std::cout << "user login uid is  " << uid << " applyname  is "
+	LLOG_INFO << "user login uid is  " << uid << " applyname  is "
 		<< applyname << " bakname is " << bakname << " touid is " << touid << endl;
 
 	Json::Value  rtvalue;
@@ -590,7 +591,7 @@ void LogicSystem::AuthFriendApply(std::shared_ptr<CSession> session, const short
 	auto uid = root["fromuid"].asInt();
 	auto touid = root["touid"].asInt();
 	auto back_name = root["back"].asString();
-	std::cout << "from " << uid << " auth friend to " << touid << std::endl;
+	LLOG_INFO << "from " << uid << " auth friend to " << touid << std::endl;
 
 	Json::Value  rtvalue;
 	rtvalue["error"] = ErrorCodes::Success;
@@ -692,7 +693,7 @@ void LogicSystem::GetUserByUid(std::string uid_str, Json::Value& rtvalue)
 		auto desc = root["desc"].asString();
 		auto sex = root["sex"].asInt();
 		auto icon = root["icon"].asString();
-		std::cout << "user  uid is  " << uid << " name  is "
+		LLOG_INFO << "user  uid is  " << uid << " name  is "
 			<< name << " pwd is " << pwd << " email is " << email << " icon is " << endl;
 
 		rtvalue["uid"] = uid;
@@ -761,7 +762,7 @@ void LogicSystem::GetUserByName(std::string name, Json::Value& rtvalue)
 		auto desc = root["desc"].asString();
 		auto sex = root["sex"].asInt();
 		auto icon = root["icon"].asString();
-		std::cout << "user  uid is  " << uid << " name  is "
+		LLOG_INFO << "user  uid is  " << uid << " name  is "
 			<< name << " pwd is " << pwd << " email is " << email << endl;
 
 		rtvalue["uid"] = uid;
@@ -852,8 +853,8 @@ void LogicSystem::DealChatTextMsg(std::shared_ptr<CSession> session, const short
 	for (const auto& txt_obj : arrays) {
 		auto content = txt_obj["content"].asString();
 		auto unique_id = txt_obj["unique_id"].asString();
-		std::cout << "content is " << content << std::endl;
-		std::cout << "unique_id is " << unique_id << std::endl;
+		LLOG_INFO << "content is " << content << std::endl;
+		LLOG_INFO << "unique_id is " << unique_id << std::endl;
 		auto chat_msg = std::make_shared<ChatMessage>();
 		chat_msg->chat_time = timestamp;
 		chat_msg->sender_id = uid;

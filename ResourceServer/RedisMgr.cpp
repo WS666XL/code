@@ -1,4 +1,5 @@
 #include "RedisMgr.h"
+#include "Logger.h"
 #include "ConfigMgr.h"
 #include <json/json.h>
 #include <json/reader.h>
@@ -27,13 +28,13 @@ bool RedisMgr::Get(const std::string& key, std::string& value)
 	}
 	auto reply = (redisReply*)redisCommand(connect, "GET %s", key.c_str());
 	if (reply == NULL) {
-		std::cout << "[ GET  " << key << " ] failed" << std::endl;
+		LLOG_INFO << "[ GET  " << key << " ] failed" << std::endl;
 		_con_pool->returnConnection(connect);
 		return false;
 	}
 
 	if (reply->type != REDIS_REPLY_STRING) {
-		std::cout << "[ GET  " << key << " ] failed" << std::endl;
+		LLOG_INFO << "[ GET  " << key << " ] failed" << std::endl;
 		freeReplyObject(reply);
 		_con_pool->returnConnection(connect);
 		return false;
@@ -42,7 +43,7 @@ bool RedisMgr::Get(const std::string& key, std::string& value)
 	value = reply->str;
 	freeReplyObject(reply);
 
-	std::cout << "Succeed to execute command [ GET " << key << "  ]" << std::endl;
+	LLOG_INFO << "Succeed to execute command [ GET " << key << "  ]" << std::endl;
 	_con_pool->returnConnection(connect);
 	return true;
 }
@@ -55,13 +56,13 @@ bool RedisMgr::SetExp(const std::string& key, const std::string& value, int expi
 	auto reply = (redisReply*)redisCommand(connect, "SETEX %s %d %s",
 		key.c_str(), expire_seconds, value.c_str());
 	if (reply == nullptr) {
-		std::cout << "Execut command [ SETEX " << key << " ] failure ! " << std::endl;
+		LLOG_INFO << "Execut command [ SETEX " << key << " ] failure ! " << std::endl;
 		_con_pool->returnConnection(connect);
 		return false;
 	}
 	if (!(reply->type == REDIS_REPLY_STATUS &&
 		(strcmp(reply->str, "OK") == 0 || strcmp(reply->str, "ok") == 0))) {
-		std::cout << "Execut command [ SETEX " << key << " ] failure ! " << std::endl;
+		LLOG_INFO << "Execut command [ SETEX " << key << " ] failure ! " << std::endl;
 		freeReplyObject(reply);
 		_con_pool->returnConnection(connect);
 		return false;
@@ -78,7 +79,7 @@ bool RedisMgr::Del(const std::string& key) {
 	}
 	auto reply = (redisReply*)redisCommand(connect, "DEL %s", key.c_str());
 	if (reply == nullptr) {
-		std::cout << "Execut command [ DEL " << key << " ] failure ! " << std::endl;
+		LLOG_INFO << "Execut command [ DEL " << key << " ] failure ! " << std::endl;
 		_con_pool->returnConnection(connect);
 		return false;
 	}
@@ -117,7 +118,7 @@ std::shared_ptr<FileInfo> RedisMgr::GetFileInfo(const std::string& key) {
 		info->_trans_size = std::stoll(root["trans_size"].asString());
 	}
 	catch (const std::exception& e) {
-		std::cout << "parse upload file info failed: " << e.what() << std::endl;
+		LLOG_INFO << "parse upload file info failed: " << e.what() << std::endl;
 		return nullptr;
 	}
 	return info;
@@ -152,7 +153,7 @@ std::shared_ptr<FileInfo> RedisMgr::GetDownloadInfo(const std::string& key) {
 		info->_trans_size = std::stoll(root["trans_size"].asString());
 	}
 	catch (const std::exception& e) {
-		std::cout << "parse download file info failed: " << e.what() << std::endl;
+		LLOG_INFO << "parse download file info failed: " << e.what() << std::endl;
 		return nullptr;
 	}
 	return info;
@@ -172,7 +173,7 @@ bool RedisMgr::Set(const std::string& key, const std::string& value) {
 	//如果返回NULL则说明执行失败
 	if (NULL == reply)
 	{
-		std::cout << "Execut command [ SET " << key << "  " << value << " ] failure ! " << std::endl;
+		LLOG_INFO << "Execut command [ SET " << key << "  " << value << " ] failure ! " << std::endl;
 		_con_pool->returnConnection(connect);
 		return false;
 	}
@@ -180,14 +181,14 @@ bool RedisMgr::Set(const std::string& key, const std::string& value) {
 	//如果执行失败则释放连接
 	if (!(reply->type == REDIS_REPLY_STATUS && (strcmp(reply->str, "OK") == 0 || strcmp(reply->str, "ok") == 0)))
 	{
-		std::cout << "Execut command [ SET " << key << "  " << value << " ] failure ! " << std::endl;
+		LLOG_INFO << "Execut command [ SET " << key << "  " << value << " ] failure ! " << std::endl;
 		freeReplyObject(reply);
 		_con_pool->returnConnection(connect);
 		return false;
 	}
 
 	freeReplyObject(reply);
-	std::cout << "Execut command [ SET " << key << "  " << value << " ] success ! " << std::endl;
+	LLOG_INFO << "Execut command [ SET " << key << "  " << value << " ] success ! " << std::endl;
 	_con_pool->returnConnection(connect);
 	return true;
 }

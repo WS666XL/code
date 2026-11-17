@@ -1,4 +1,5 @@
 #include "MysqlDao.h"
+#include "Logger.h"
 #include "ConfigMgr.h"
 
 MysqlDao::MysqlDao()
@@ -40,7 +41,7 @@ int MysqlDao::RegUser(const std::string& name, const std::string& email, const s
 	  std::unique_ptr<sql::ResultSet> res(stmtResult->executeQuery("SELECT @result AS result"));
 	  if (res->next()) {
 	       int result = res->getInt("result");
-	      std::cout << "Result: " << result << std::endl;
+	      LLOG_INFO << "Result: " << result << std::endl;
 		  pool_->returnConnection(std::move(con));
 		  return result;
 	  }
@@ -49,9 +50,9 @@ int MysqlDao::RegUser(const std::string& name, const std::string& email, const s
 	}
 	catch (sql::SQLException& e) {
 		pool_->returnConnection(std::move(con));
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return -1;
 	}
 }
@@ -74,7 +75,7 @@ bool MysqlDao::CheckEmail(const std::string& name, const std::string& email) {
 
 		// 遍历结果集
 		while (res->next()) {
-			std::cout << "Check Email: " << res->getString("email") << std::endl;
+			LLOG_INFO << "Check Email: " << res->getString("email") << std::endl;
 			if (email != res->getString("email")) {
 				pool_->returnConnection(std::move(con));
 				return false;
@@ -86,9 +87,9 @@ bool MysqlDao::CheckEmail(const std::string& name, const std::string& email) {
 	}
 	catch (sql::SQLException& e) {
 		pool_->returnConnection(std::move(con));
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return false;
 	}
 }
@@ -110,15 +111,15 @@ bool MysqlDao::UpdatePwd(const std::string& name, const std::string& newpwd) {
 		// 执行更新
 		int updateCount = pstmt->executeUpdate();
 
-		std::cout << "Updated rows: " << updateCount << std::endl;
+		LLOG_INFO << "Updated rows: " << updateCount << std::endl;
 		pool_->returnConnection(std::move(con));
 		return true;
 	}
 	catch (sql::SQLException& e) {
 		pool_->returnConnection(std::move(con));
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return false;
 	}
 }
@@ -147,7 +148,7 @@ bool MysqlDao::CheckPwd(const std::string& name, const std::string& pwd, UserInf
 		while (res->next()) {
 			origin_pwd = res->getString("pwd");
 			// 输出查询到的密码
-			std::cout << "Password: " << origin_pwd << std::endl;
+			LLOG_INFO << "Password: " << origin_pwd << std::endl;
 			break;
 		}
 
@@ -161,9 +162,9 @@ bool MysqlDao::CheckPwd(const std::string& name, const std::string& pwd, UserInf
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return false;
 	}
 }
@@ -203,9 +204,9 @@ std::shared_ptr<UserInfo> MysqlDao::GetUser(int uid)
 		return user_ptr;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return nullptr;
 	}
 }
@@ -243,9 +244,9 @@ std::shared_ptr<UserInfo> MysqlDao::GetUser( std::string name) {
 		return user_ptr;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return nullptr;
 	}
 }
@@ -276,9 +277,9 @@ bool MysqlDao::AddFriendApply(const int& from, const int& to)
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return false;
 	}
 
@@ -321,9 +322,9 @@ bool MysqlDao::GetApplyList(int touid, std::vector<std::shared_ptr<ApplyInfo>>& 
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return false;
 	}
 }
@@ -352,9 +353,9 @@ bool MysqlDao::AuthFriendApply(const int& from, const int& to) {
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return false;
 	}
 
@@ -409,7 +410,7 @@ bool MysqlDao::AddFriend(const int& from, const int& to, std::string back_name) 
 
 		// 提交事务
 		con->_con->commit();
-		std::cout << "addfriend insert friends success" << std::endl;
+		LLOG_INFO << "addfriend insert friends success" << std::endl;
 
 		return true;
 	}
@@ -418,20 +419,20 @@ bool MysqlDao::AddFriend(const int& from, const int& to, std::string back_name) 
 		if (con) {
 			con->_con->rollback();
 		}
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return false;
 	}
 	catch (std::exception& e) {
 		// 非 SQL 异常也要回滚，防止带开事务的连接被归还连接池
 		try { if (con) { con->_con->rollback(); } } catch (...) {}
-		std::cerr << "AddFriend std::exception: " << e.what() << std::endl;
+		LLOG_ERROR << "AddFriend std::exception: " << e.what() << std::endl;
 		return false;
 	}
 	catch (...) {
 		try { if (con) { con->_con->rollback(); } } catch (...) {}
-		std::cerr << "AddFriend unknown exception" << std::endl;
+		LLOG_ERROR << "AddFriend unknown exception" << std::endl;
 		return false;
 	}
 
@@ -475,9 +476,9 @@ bool MysqlDao::GetFriendList(int self_id, std::vector<std::shared_ptr<UserInfo> 
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return false;
 	}
 
@@ -583,7 +584,7 @@ bool MysqlDao::GetUserThreads(
 		threads = std::move(tmp);
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException: " << e.what()
+		LLOG_ERROR << "SQLException: " << e.what()
 			<< " (MySQL error code: " << e.getErrorCode()
 			<< ", SQLState: " << e.getSQLState() << ")\n";
 		return false;
@@ -681,7 +682,7 @@ bool MysqlDao::CreatePrivateChat(int user1_id, int user2_id, int& thread_id)
 			}
 		}
 
-		std::cerr << "SQLException: " << e.what()
+		LLOG_ERROR << "SQLException: " << e.what()
 			<< " (Code: " << e.getErrorCode() << ")" << std::endl;
 		return false;
 	}
@@ -745,7 +746,7 @@ bool MysqlDao::CreateGroup(int creator_uid, const std::string& name,
 	}
 	catch (sql::SQLException& e) {
 		conn->rollback();
-		std::cerr << "SQLException in CreateGroup: " << e.what()
+		LLOG_ERROR << "SQLException in CreateGroup: " << e.what()
 			<< " (Code: " << e.getErrorCode() << ")" << std::endl;
 		return false;
 	}
@@ -774,7 +775,7 @@ bool MysqlDao::GetGroupMembers(int thread_id, std::vector<int>& member_uids)
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException in GetGroupMembers: " << e.what() << std::endl;
+		LLOG_ERROR << "SQLException in GetGroupMembers: " << e.what() << std::endl;
 		return false;
 	}
 }
@@ -850,7 +851,7 @@ std::shared_ptr<PageResult> MysqlDao::LoadChatMsg(int thread_id, int last_messag
 		return page_res;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException: " << e.what() << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what() << std::endl;
 		return nullptr;
 	}
 	return nullptr;
@@ -879,7 +880,7 @@ bool MysqlDao::DeleteChatMsgForUser(int message_id, int uid)
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException in DeleteChatMsgForUser: " << e.what() << std::endl;
+		LLOG_ERROR << "SQLException in DeleteChatMsgForUser: " << e.what() << std::endl;
 		return false;
 	}
 }
@@ -906,7 +907,7 @@ bool MysqlDao::UpdateUserInfo(int uid, const std::string& nick, const std::strin
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException in UpdateUserInfo: " << e.what() << std::endl;
+		LLOG_ERROR << "SQLException in UpdateUserInfo: " << e.what() << std::endl;
 		return false;
 	}
 }
@@ -935,7 +936,7 @@ bool MysqlDao::UpdateFriendRemark(int self_id, int friend_id, const std::string&
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException in UpdateFriendRemark: " << e.what() << std::endl;
+		LLOG_ERROR << "SQLException in UpdateFriendRemark: " << e.what() << std::endl;
 		return false;
 	}
 }
@@ -962,7 +963,7 @@ bool MysqlDao::DeleteFriendOneSide(int self_id, int friend_id)
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException in DeleteFriendOneSide: " << e.what() << std::endl;
+		LLOG_ERROR << "SQLException in DeleteFriendOneSide: " << e.what() << std::endl;
 		return false;
 	}
 }
@@ -1019,7 +1020,7 @@ bool MysqlDao::AddChatMsg(std::vector<std::shared_ptr<ChatMessage>>& chat_datas)
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException: " << e.what() << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what() << std::endl;
 		conn->rollback();
 		return false;
 	}

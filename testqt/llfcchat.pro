@@ -6,6 +6,11 @@ QT += widgets network
 # 使用 C++17 标准
 CONFIG += c++17
 
+# 统一日志头文件（服务端/客户端共用，见 common/Logger.h）
+INCLUDEPATH += $$PWD/../common
+# spdlog 依赖系统 fmt 库
+LIBS += -lfmt
+
 # 生成的 exe 使用的图标，以及可执行文件的输出目录
 RC_ICONS = icon.ico
 DESTDIR = ./bin

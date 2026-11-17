@@ -1,6 +1,7 @@
 // Singleton.h —— 单例模板类（CRTP：class X : public Singleton<X>）
 #pragma once
 #include <memory>
+#include "Logger.h"
 #include <mutex>
 #include <iostream>
 
@@ -26,12 +27,12 @@ public:
 
     // 调试用：打印实例地址
     void PrintAddress() {
-        std::cout << _instance.get() << std::endl;
+        LLOG_INFO << _instance.get() << std::endl;
     }
 
     // 析构：打印一句，便于观察销毁时机
     ~Singleton() {
-        std::cout << "this is singleton destruct" << std::endl;
+        LLOG_INFO << "this is singleton destruct" << std::endl;
     }
 };
 

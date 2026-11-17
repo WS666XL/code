@@ -1,4 +1,5 @@
 #include "ChatGrpcClient.h"
+#include "Logger.h"
 #include "RedisMgr.h"
 #include "ConfigMgr.h"
 #include "UserMgr.h"
@@ -72,7 +73,7 @@ bool ChatGrpcClient::GetBaseInfo(std::string base_key, int uid, std::shared_ptr<
 		userinfo->desc = root["desc"].asString();
 		userinfo->sex = root["sex"].asInt();
 		userinfo->icon = root["icon"].asString();
-		std::cout << "user login uid is  " << userinfo->uid << " name  is "
+		LLOG_INFO << "user login uid is  " << userinfo->uid << " name  is "
 			<< userinfo->name << " pwd is " << userinfo->pwd << " email is " << userinfo->email << endl;
 	}
 	else {
@@ -181,7 +182,7 @@ KickUserRsp ChatGrpcClient::NotifyKickUser(std::string server_ip, const KickUser
 
 	auto find_iter = _pools.find(server_ip);
 	if (find_iter == _pools.end()) {
-		std::cout << "NotifyKickUser: no grpc pool for server [" << server_ip << "]" << std::endl;
+		LLOG_INFO << "NotifyKickUser: no grpc pool for server [" << server_ip << "]" << std::endl;
 		return rsp;
 	}
 
@@ -192,7 +193,7 @@ KickUserRsp ChatGrpcClient::NotifyKickUser(std::string server_ip, const KickUser
 		pool->returnConnection(std::move(stub));
 		});
 	Status status = stub->NotifyKickUser(&context, req, &rsp);
-	std::cout << "NotifyKickUser rpc to [" << server_ip << "] uid=" << req.uid()
+	LLOG_INFO << "NotifyKickUser rpc to [" << server_ip << "] uid=" << req.uid()
 		<< " status=" << (status.ok() ? "ok" : status.error_message()) << std::endl;
 
 	if (!status.ok()) {

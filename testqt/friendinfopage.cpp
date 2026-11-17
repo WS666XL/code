@@ -1,4 +1,5 @@
 #include "friendinfopage.h"
+#include "Logger.h"
 #include "ui_friendinfopage.h"
 #include "global.h"
 #include <QDebug>
@@ -34,6 +35,6 @@ void FriendInfoPage::SetInfo(std::shared_ptr<UserInfo> user_info)
 
 void FriendInfoPage::on_msg_chat_clicked()
 {
-    qDebug() << "msg chat btn clicked";
+    LLOG_DEBUG << "msg chat btn clicked";
     emit sig_jump_chat_item(_user_info);
 }

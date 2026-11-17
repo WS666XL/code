@@ -1,5 +1,6 @@
-﻿#include "messagetextedit.h"
+#include "messagetextedit.h"
 #include <QDebug>
+#include "Logger.h"
 #include <QMessageBox>
 #include <QUuid>
 #include <QCryptographicHash>
@@ -110,7 +111,7 @@ void MessageTextEdit::insertImages(const QString &url)
     QFileInfo fileInfo(url);
     QImage image(url);
     if (image.isNull()) {
-        qDebug() << "MessageTextEdit insertImages: cannot load image" << url;
+        LLOG_DEBUG << "MessageTextEdit insertImages: cannot load image" << url;
         return;
     }
     //按比例缩放图片
@@ -255,7 +256,7 @@ QPixmap MessageTextEdit::getFileIconPixmap(const QString &url)
     QIcon icon = provder.icon(fileinfo);
 
     QString strFileSize = getFileSize(fileinfo.size());
-    //qDebug() << "FileSize=" << fileinfo.size();
+    //LLOG_DEBUG << "FileSize=" << fileinfo.size();
 
     QFont font(QString("宋体"),10,QFont::Normal,false);
     QFontMetrics fontMetrics(font);
@@ -309,5 +310,5 @@ QString MessageTextEdit::getFileSize(qint64 size)
 
 void MessageTextEdit::textEditChanged()
 {
-    //qDebug() << "text changed!" << endl;
+    //LLOG_DEBUG << "text changed!" << endl;
 }

@@ -1,4 +1,5 @@
 #include "contactuserlist.h"
+#include "Logger.h"
 #include "global.h"
 #include "listitembase.h"
 #include "grouptipitem.h"
@@ -80,7 +81,7 @@ void ContactUserList::addContactUserList()
     _add_friend_item->SetItemType(ListItemType::APPLY_FRIEND_ITEM);
 
     QListWidgetItem *add_item = new QListWidgetItem;
-    //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
+    //LLOG_DEBUG << "chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
     add_item->setSizeHint(_add_friend_item->sizeHint());
     this->addItem(add_item);
     this->setItemWidget(add_item, _add_friend_item);
@@ -103,7 +104,7 @@ void ContactUserList::addContactUserList()
         //用完整 UserInfo：显示名按 备注 > 昵称 > 用户名
         con_user_wid->SetInfo(con_ele);
         QListWidgetItem *item = new QListWidgetItem;
-        //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
+        //LLOG_DEBUG << "chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
         item->setSizeHint(con_user_wid->sizeHint());
         this->addItem(item);
         this->setItemWidget(item, con_user_wid);
@@ -123,7 +124,7 @@ void ContactUserList::addContactUserList()
     //     auto *con_user_wid = new ConUserItem();
     //     con_user_wid->SetInfo(0,names[name_i], heads[head_i]);
     //     QListWidgetItem *item = new QListWidgetItem;
-    //     //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
+    //     //LLOG_DEBUG << "chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
     //     item->setSizeHint(con_user_wid->sizeHint());
     //     this->addItem(item);
     //     this->setItemWidget(item, con_user_wid);
@@ -160,7 +161,7 @@ bool ContactUserList::eventFilter(QObject *watched, QEvent *event)
 
         if (maxScrollValue - currentValue <= 0) {
             //     // 滚动到底部，加载新的联系人
-            //     qDebug()<<"load more contact user";
+            //     LLOG_DEBUG << "load more contact user";
             //     //发送信号通知聊天界面加载更多聊天内容
             //     emit sig_loading_contact_user();
             // }
@@ -182,7 +183,7 @@ bool ContactUserList::eventFilter(QObject *watched, QEvent *event)
                 //QCoreApplication::quit(); // 完成后退出应用程序
             });
             // 滚动到底部，加载新的联系人
-            qDebug()<<"load more contact user";
+            LLOG_DEBUG << "load more contact user";
             //发送信号通知聊天界面加载更多聊天内容
             emit sig_loading_contact_user();
         }
@@ -199,28 +200,28 @@ void ContactUserList::slot_item_clicked(QListWidgetItem *item)
 {
     QWidget *widget = this->itemWidget(item); // 获取自定义widget对象
     if(!widget){
-        qDebug()<< "slot item clicked widget is nullptr";
+        LLOG_DEBUG << "slot item clicked widget is nullptr";
         return;
     }
 
     // 对自定义widget进行操作， 将item 转化为基类ListItemBase
     ListItemBase *customItem = qobject_cast<ListItemBase*>(widget);
     if(!customItem){
-        qDebug()<< "slot item clicked widget is nullptr";
+        LLOG_DEBUG << "slot item clicked widget is nullptr";
         return;
     }
 
     auto itemType = customItem->GetItemType();
     if(itemType == ListItemType::INVALID_ITEM
         || itemType == ListItemType::GROUP_TIP_ITEM){
-        qDebug()<< "slot invalid item clicked ";
+        LLOG_DEBUG << "slot invalid item clicked ";
         return;
     }
 
     if(itemType == ListItemType::APPLY_FRIEND_ITEM){
 
         // 创建对话框，提示用户
-        qDebug()<< "apply friend item clicked ";
+        LLOG_DEBUG << "apply friend item clicked ";
         //跳转到好友申请界面
         emit sig_switch_apply_friend_page();
         return;
@@ -228,7 +229,7 @@ void ContactUserList::slot_item_clicked(QListWidgetItem *item)
 
     if(itemType == ListItemType::CONTACT_USER_ITEM){
         // 创建对话框，提示用户
-        qDebug()<< "contact user item clicked ";
+        LLOG_DEBUG << "contact user item clicked ";
         auto con_item = qobject_cast<ConUserItem*>(customItem);
         auto user_info = con_item->GetInfo();
         //跳转到好友申请界面
@@ -239,7 +240,7 @@ void ContactUserList::slot_item_clicked(QListWidgetItem *item)
 
 void ContactUserList::slot_add_auth_firend(std::shared_ptr<AuthInfo> auth_info)//对方同意添加你
 {
-    qDebug() << "slot add auth friend ";
+    LLOG_DEBUG << "slot add auth friend ";
     bool isFriend = UserMgr::GetInstance()->CheckFriendById(auth_info->_uid);
     if(isFriend){
         return;
@@ -252,7 +253,7 @@ void ContactUserList::slot_add_auth_firend(std::shared_ptr<AuthInfo> auth_info)/
     auto *con_user_wid = new ConUserItem();
     con_user_wid->SetInfo(auth_info);
     QListWidgetItem *item = new QListWidgetItem;
-    //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
+    //LLOG_DEBUG << "chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
     item->setSizeHint(con_user_wid->sizeHint());
 
     // 获取 groupitem 的索引
@@ -266,7 +267,7 @@ void ContactUserList::slot_add_auth_firend(std::shared_ptr<AuthInfo> auth_info)/
 
 void ContactUserList::slot_auth_rsp(std::shared_ptr<AuthRsp> auth_rsp)//你自己同意对方的好友申请
 {
-    qDebug() << "slot auth rsp called";
+    LLOG_DEBUG << "slot auth rsp called";
     bool isFriend = UserMgr::GetInstance()->CheckFriendById(auth_rsp->_uid);
     if(isFriend){
         return;
@@ -280,7 +281,7 @@ void ContactUserList::slot_auth_rsp(std::shared_ptr<AuthRsp> auth_rsp)//你自�
     }
     con_user_wid->SetInfo(auth_rsp->_uid ,auth_rsp->_name, icon);
     QListWidgetItem *item = new QListWidgetItem;
-    //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
+    //LLOG_DEBUG << "chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
     item->setSizeHint(con_user_wid->sizeHint());
 
     // 获取 groupitem 的索引

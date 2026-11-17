@@ -1,5 +1,6 @@
 // HttpConnection.cpp —— 连接类的具体实现
 #include "HttpConnection.h"
+#include "Logger.h"
 #include"LogicSystem.h"
 // 构造函数只保存 socket（move 进来，避免拷贝）；异步读放在 Start() 里由 CServer 显式调用
 HttpConnection::HttpConnection(boost::asio::io_context& _ioc) :_socket(_ioc)
@@ -18,7 +19,7 @@ void HttpConnection::Start() {
             try {
                 // 出错（断开/超时/协议错误）则打印并放弃这条连接
                 if (ec) {
-                    std::cout << "http read err is " << ec.message() << std::endl;
+                    LLOG_INFO << "http read err is " << ec.message() << std::endl;
                     return;
                 }
 
@@ -30,7 +31,7 @@ void HttpConnection::Start() {
                 self->CheckDeadline();   // ② 启动 60 秒超时检测
             }
             catch (std::exception& exp) {
-                std::cout << "exception is " << exp.what() << std::endl;
+                LLOG_INFO << "exception is " << exp.what() << std::endl;
             }
         }
     );

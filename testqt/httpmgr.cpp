@@ -1,4 +1,5 @@
 #include "httpmgr.h"
+#include "Logger.h"
 
 HttpMgr::~HttpMgr()
 {
@@ -44,7 +45,7 @@ void HttpMgr::PostHttpReq(QUrl url, QJsonObject json, ReqId req_id, Modules mod)
     QObject::connect(reply, &QNetworkReply::finished, [reply, self, req_id, mod](){
         // 处理网络错误（超时、断网、404等）
         if(reply->error() != QNetworkReply::NoError){
-            qDebug() << reply->errorString();
+            LLOG_DEBUG << reply->errorString();
             // 发射信号，通知外部：本次请求失败，带回请求ID、模块、错误码
             emit self->sig_http_finish(req_id, "", ErrorCodes::ERR_NETWORK, mod);
             reply->deleteLater();   // Qt安全释放：事件循环空闲时删除reply，禁止直接delete reply

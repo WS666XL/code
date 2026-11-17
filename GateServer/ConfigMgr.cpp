@@ -1,5 +1,6 @@
 // ConfigMgr.cpp —— 构造时把 config.ini 读进 _config_map，之后全程查内存，不再读盘
 #include "ConfigMgr.h"
+#include "Logger.h"
 
 ConfigMgr::ConfigMgr() {
     // 获取当前工作目录  
@@ -8,7 +9,7 @@ ConfigMgr::ConfigMgr() {
     boost::filesystem::path current_path = boost::filesystem::current_path();
     // 构建config.ini文件的完整路径  
     boost::filesystem::path config_path = current_path / "config.ini";
-    std::cout << "Config path: " << config_path << std::endl;
+    LLOG_INFO << "Config path: " << config_path << std::endl;
 
     // 使用Boost.PropertyTree来读取INI文件  
     boost::property_tree::ptree pt;                             // ptree 是通用树，读 ini 后层级为 section → key → value
@@ -37,9 +38,16 @@ ConfigMgr::ConfigMgr() {
     for (const auto& section_entry : _config_map) {
         const std::string& section_name = section_entry.first;
         SectionInfo section_config = section_entry.second;
-        std::cout << "[" << section_name << "]" << std::endl;
+        LLOG_INFO << "[" << section_name << "]" << std::endl;
         for (const auto& key_value_pair : section_config._section_datas) {
-            std::cout << key_value_pair.first << "=" << key_value_pair.second << std::endl;
+            // 密码类字段打码，避免明文写进日志文件
+            std::string key = key_value_pair.first;
+            std::string value = key_value_pair.second;
+            if (key.find("Pass") != std::string::npos || key.find("pass") != std::string::npos ||
+                key.find("Pwd") != std::string::npos || key.find("pwd") != std::string::npos) {
+                value = "******";
+            }
+            LLOG_INFO << key << "=" << value << std::endl;
         }
     }
 

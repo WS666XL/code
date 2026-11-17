@@ -38,6 +38,8 @@ find_library(JSONCPP_LIB jsoncpp
     PATHS ${USER_PREFIX}/usr/lib/x86_64-linux-gnu NO_DEFAULT_PATH REQUIRED)
 find_library(MYSQLCPPCONN_LIB mysqlcppconn
     PATHS ${USER_PREFIX}/usr/lib/x86_64-linux-gnu NO_DEFAULT_PATH REQUIRED)
+# spdlog（common/Logger.h）在 Debian/Ubuntu 上使用系统 fmt，需要显式链接
+find_library(FMT_LIB fmt PATHS ${USER_PREFIX}/usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu REQUIRED)
 find_program(GRPC_CPP_PLUGIN grpc_cpp_plugin REQUIRED)
 
 set(MYSQLCPPCONN_INCLUDE "${USER_PREFIX}/usr/include")
@@ -68,6 +70,7 @@ endfunction()
 function(config_server target)
     target_include_directories(${target} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/common
         ${MYSQLCPPCONN_INCLUDE}
         ${JSONCPP_INCLUDE}
         /usr/include/hiredis
@@ -80,7 +83,8 @@ function(config_server target)
         ${GRPC_LIBRARIES}
         ${HIREDIS_LIB}
         ${JSONCPP_LIB}
-        ${MYSQLCPPCONN_LIB})
+        ${MYSQLCPPCONN_LIB}
+        ${FMT_LIB})
     if(GRPC_LIBRARY_DIRS)
         target_link_directories(${target} PRIVATE ${GRPC_LIBRARY_DIRS})
     endif()

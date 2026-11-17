@@ -3,23 +3,27 @@
 #include <QApplication>
 #include<QFile>
 #include"global.h"
+#include "Logger.h"
 
 // 程序入口
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);          // 每个 Qt GUI 程序都必须有一个 QApplication
+    // 日志：控制台 + <程序目录>/logs/client.log
+    xulei::Logger::Init("client",
+        (QCoreApplication::applicationDirPath() + "/logs").toStdString(), "debug");
     // 应用底色调成白色：窗口刚映射、Qt 还没画出第一帧时不会闪黑屏
     a.setPalette(QColor(255, 255, 255));
     QFile qss(":/style/stylesheet.qss"); // 从资源文件(qrc)里读取样式表
 
     if( qss.open(QFile::ReadOnly))//只读
     {
-        qDebug("open success");
+        LLOG_INFO << "open success";
         QString style = QLatin1String(qss.readAll());
         a.setStyleSheet(style);          // 全局套用样式，所有控件都会受影响
         qss.close();
     }else{
-        qDebug("Open failed");
+        LLOG_INFO << "Open failed";
     }
 
     // ===== 读取 config.ini，拼出后端服务器地址前缀 =====
@@ -38,6 +42,9 @@ int main(int argc, char *argv[])
     // QSettings 以 ini 格式读配置：ini 里的 [GateServer] + host=xxx
     // 取值时写成 "GateServer/host"（节名/键名）
     QSettings settings(config_path, QSettings::IniFormat);
+    // 日志级别可在 config.ini 的 [Log] level 里改（debug/info/warn/error）
+    xulei::Logger::SetLevel(
+        settings.value("Log/level", "debug").toString().toStdString());
     QString gate_host = settings.value("GateServer/host").toString();
     QString gate_port = settings.value("GateServer/port").toString();
     // 拼成 "http://localhost:8080" 存进全局变量，各界面再用它拼具体接口

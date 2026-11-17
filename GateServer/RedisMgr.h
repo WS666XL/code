@@ -1,5 +1,6 @@
 #pragma once
 #include "const.h"
+#include "Logger.h"
 #include "hiredis.h"
 #include <queue>
 #include <atomic>
@@ -18,20 +19,22 @@ public:
 				if (context != nullptr) {
 					redisFree(context);
 				}
+				LLOG_ERROR << "Redis connect failed " << host << ":" << port
+					<< ", check redis-server and port/passwd in config.ini" << std::endl;
 				continue;
 			}
 
 			auto reply = (redisReply*)redisCommand(context, "AUTH %s", pwd);
 			if (reply->type == REDIS_REPLY_ERROR) {
-				std::cout << "ÈÏÖ¤Ê§°Ü" << std::endl;
-				//Ö´ÐÐ³É¹¦ ÊÍ·ÅredisCommandÖ´ÐÐºó·µ»ØµÄredisReplyËùÕ¼ÓÃµÄÄÚ´æ
+				LLOG_ERROR << "Redis auth failed" << std::endl;
+				//æ‰§è¡ŒæˆåŠŸ é‡Šæ”¾redisCommandæ‰§è¡ŒåŽè¿”å›žçš„redisReplyæ‰€å ç”¨çš„å†…å­˜
 				freeReplyObject(reply);
 				continue;
 			}
 
-			//Ö´ÐÐ³É¹¦ ÊÍ·ÅredisCommandÖ´ÐÐºó·µ»ØµÄredisReplyËùÕ¼ÓÃµÄÄÚ´æ
+			//æ‰§è¡ŒæˆåŠŸ é‡Šæ”¾redisCommandæ‰§è¡ŒåŽè¿”å›žçš„redisReplyæ‰€å ç”¨çš„å†…å­˜
 			freeReplyObject(reply);
-			std::cout << "ÈÏÖ¤³É¹¦" << std::endl;
+			LLOG_INFO << "è®¤è¯æˆåŠŸ" << std::endl;
 			connections_.push(context);
 		}
 
@@ -43,7 +46,7 @@ public:
 					counter_ = 0;
 				}
 
-				std::this_thread::sleep_for(std::chrono::seconds(1)); // Ã¿¸ô 30 Ãë·¢ËÍÒ»´Î PING ÃüÁî
+				std::this_thread::sleep_for(std::chrono::seconds(1)); // æ¯éš” 30 ç§’å‘é€ä¸€æ¬¡ PING å‘½ä»¤
 			}
 			});
 
@@ -70,7 +73,7 @@ public:
 			}
 			return !connections_.empty();
 			});
-		//Èç¹ûÍ£Ö¹ÔòÖ±½Ó·µ»Ø¿ÕÖ¸Õë
+		//å¦‚æžœåœæ­¢åˆ™ç›´æŽ¥è¿”å›žç©ºæŒ‡é’ˆ
 		if (b_stop_) {
 			return  nullptr;
 		}
@@ -107,7 +110,7 @@ private:
 			try {
 				auto reply = (redisReply*)redisCommand(context, "PING");
 				if (!reply) {
-					std::cout << "reply is null, redis ping failed: " << std::endl;
+					LLOG_INFO << "reply is null, redis ping failed: " << std::endl;
 					connections_.push(context);
 					continue;
 				}
@@ -115,7 +118,7 @@ private:
 				connections_.push(context);
 			}
 			catch (std::exception& exp) {
-				std::cout << "Error keeping connection alive: " << exp.what() << std::endl;
+				LLOG_INFO << "Error keeping connection alive: " << exp.what() << std::endl;
 				redisFree(context);
 				context = redisConnect(host_, port_);
 				if (context == nullptr || context->err != 0) {
@@ -127,15 +130,15 @@ private:
 
 				auto reply = (redisReply*)redisCommand(context, "AUTH %s", pwd_);
 				if (reply->type == REDIS_REPLY_ERROR) {
-					std::cout << "ÈÏÖ¤Ê§°Ü" << std::endl;
-					//Ö´ÐÐ³É¹¦ ÊÍ·ÅredisCommandÖ´ÐÐºó·µ»ØµÄredisReplyËùÕ¼ÓÃµÄÄÚ´æ
+					LLOG_ERROR << "Redis auth failed" << std::endl;
+					//æ‰§è¡ŒæˆåŠŸ é‡Šæ”¾redisCommandæ‰§è¡ŒåŽè¿”å›žçš„redisReplyæ‰€å ç”¨çš„å†…å­˜
 					freeReplyObject(reply);
 					continue;
 				}
 
-				//Ö´ÐÐ³É¹¦ ÊÍ·ÅredisCommandÖ´ÐÐºó·µ»ØµÄredisReplyËùÕ¼ÓÃµÄÄÚ´æ
+				//æ‰§è¡ŒæˆåŠŸ é‡Šæ”¾redisCommandæ‰§è¡ŒåŽè¿”å›žçš„redisReplyæ‰€å ç”¨çš„å†…å­˜
 				freeReplyObject(reply);
-				std::cout << "ÈÏÖ¤³É¹¦" << std::endl;
+				LLOG_INFO << "è®¤è¯æˆåŠŸ" << std::endl;
 				connections_.push(context);
 			}
 		}

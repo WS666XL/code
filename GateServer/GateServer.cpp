@@ -1,8 +1,10 @@
+#include "Logger.h"
 // GateServer.cpp —— 程序入口（main 所在）：事件循环驱动
 #include"const.h"
 #include"CServer.h"
 #include"ConfigMgr.h"
 #include"RedisMgr.h"
+#include"Logger.h"
 void TestRedis() {
     //连接redis 需要启动才可以进行连接
 //redis默认监听端口为6387 可以再配置文件中修改
@@ -117,6 +119,8 @@ int main()
 {
     //TestRedisMgr();
    auto &gCfgMgr = ConfigMgr::Inst() ;  
+    // 日志：控制台 + logs/gateserver.log
+    xulei::Logger::Init("gateserver", gCfgMgr["Log"]["Path"], gCfgMgr["Log"]["Level"]);
     std::string gate_port_str = gCfgMgr["GateServer"]["Port"];
     unsigned short gate_port = atoi(gate_port_str.c_str());   // 从 config.ini 读出的端口
     try
@@ -142,13 +146,13 @@ int main()
 
         // ④ 创建服务器并启动监听（CServer 需被 shared_ptr 管理才能用 shared_from_this）
         std::make_shared<CServer>(ioc, port)->Start();
-		std::cout << "Server started on port " << port << std::endl;
+		LLOG_INFO << "Server started on port " << port << std::endl;
         // ⑤ 启动事件循环（阻塞在此），不断执行到期的异步任务回调
         ioc.run();
     }
     catch (std::exception const& e)
     {
-        std::cerr << "Error: " << e.what() << std::endl;   // 异常兜底，返回非 0
+        LLOG_ERROR << "Error: " << e.what() << std::endl;   // 异常兜底，返回非 0
         return EXIT_FAILURE;
     }
 }

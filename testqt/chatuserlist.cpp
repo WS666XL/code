@@ -1,4 +1,5 @@
 #include "chatuserlist.h"
+#include "Logger.h"
 #include"usermgr.h"
 #include<QTimer>
 ChatUserList::ChatUserList(QWidget *parent):QListWidget(parent),_load_pending(false)
@@ -40,7 +41,7 @@ bool ChatUserList::eventFilter(QObject *watched, QEvent *event)
 
         // if (maxScrollValue - currentValue <= 0) {
         //     // 滚动到底部，加载新的联系人
-        //     qDebug()<<"load more chat user";
+        //     LLOG_DEBUG << "load more chat user";
         //     //发送信号通知聊天界面加载更多聊天内容
         //     emit sig_loading_chat_user();
         // }
@@ -55,7 +56,7 @@ bool ChatUserList::eventFilter(QObject *watched, QEvent *event)
                 return true;
             }
             // 滚动到底部，加载新的联系人
-            qDebug()<<"load more chat user";
+            LLOG_DEBUG << "load more chat user";
             _load_pending = true;
 
             QTimer::singleShot(100, [this](){

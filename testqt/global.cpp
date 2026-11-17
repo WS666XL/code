@@ -1,5 +1,6 @@
 #include"global.h"
 #include <QPixmapCache>
+#include "Logger.h"
 #include <QLabel>
 #include <QPointer>
 #include <QRegularExpression>
@@ -167,7 +168,7 @@ void InvalidateAvatarCache(int owner_uid, const QString& icon)
         // 无论本地是否已有同名文件都重新拉一次：内容可能已变
         FileTcpMgr::GetInstance()->DownloadAvatar(icon, owner_uid);
     }
-    qDebug() << "avatar cache invalidated for uid" << owner_uid
+    LLOG_DEBUG << "avatar cache invalidated for uid" << owner_uid
              << "new icon" << icon;
 }
 

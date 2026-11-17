@@ -1,4 +1,5 @@
 #include "ChatServerGrpcClient.h"
+#include "Logger.h"
 #include "ConfigMgr.h"
 #include "MysqlMgr.h"
 #include "const.h"
@@ -106,7 +107,7 @@ void ChatServerGrpcClient::NotifyAvatarUpdate(int uid, const std::string& icon) 
 			pair.second->returnConnection(std::move(stub));
 			});
 		if (!status.ok()) {
-			std::cerr << "NotifyAvatarUpdate to " << pair.first << " failed: "
+			LLOG_ERROR << "NotifyAvatarUpdate to " << pair.first << " failed: "
 				<< status.error_message() << std::endl;
 		}
 	}

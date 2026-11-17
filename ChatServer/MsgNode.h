@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include "Logger.h"
 #include "const.h"
 #include <iostream>
 #include <boost/asio.hpp>
@@ -15,7 +16,7 @@ public:
 	}
 
 	~MsgNode() {
-		std::cout << "destruct MsgNode" << endl;
+		LLOG_INFO << "destruct MsgNode" << endl;
 		delete[] _data;
 	}
 
@@ -24,9 +25,9 @@ public:
 		_cur_len = 0;
 	}
 
-	short _cur_len;    // µ±Ç°ÒÑ¾­´æÁË¶àÉÙÓÐÐ§×Ö½Ú
-	short _total_len;  // »º³åÇø×Ü×î´óÈÝÁ¿£¨ÄÜ´æ·ÅµÄ×î´ó×Ö½ÚÊý£©
-	char* _data;       // »º³åÇøÄÚ´æÖ¸Õë£¬´æ·ÅÊÕµ½µÄ¶þ½øÖÆ±¨ÎÄÊý¾Ý
+	short _cur_len;    // å½“å‰å·²ç»å­˜äº†å¤šå°‘æœ‰æ•ˆå­—èŠ‚
+	short _total_len;  // ç¼“å†²åŒºæ€»æœ€å¤§å®¹é‡ï¼ˆèƒ½å­˜æ”¾çš„æœ€å¤§å­—èŠ‚æ•°ï¼‰
+	char* _data;       // ç¼“å†²åŒºå†…å­˜æŒ‡é’ˆï¼Œå­˜æ”¾æ”¶åˆ°çš„äºŒè¿›åˆ¶æŠ¥æ–‡æ•°æ®
 };
 
 class RecvNode :public MsgNode {

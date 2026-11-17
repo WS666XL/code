@@ -1,4 +1,5 @@
 #include "applyfriendpage.h"
+#include "Logger.h"
 #include "ui_applyfriendpage.h"
 #include <QPainter>
 #include <QPaintEvent>
@@ -39,7 +40,7 @@ void ApplyFriendPage::AddNewApply(std::shared_ptr<AddFriendApply> apply)
                                                   apply->_name, apply->_desc, icon, apply->_name, 0, 0);
     apply_item->SetInfo( apply_info);
     QListWidgetItem* item = new QListWidgetItem;
-    //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
+    //LLOG_DEBUG << "chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
     item->setSizeHint(apply_item->sizeHint());
     item->setFlags(item->flags() & ~Qt::ItemIsEnabled & ~Qt::ItemIsSelectable);
     ui->apply_friend_list->insertItem(0,item);
@@ -75,7 +76,7 @@ void ApplyFriendPage::loadApplyList()
         auto* apply_item = new ApplyFriendItem();
         apply_item->SetInfo(apply);
         QListWidgetItem* item = new QListWidgetItem;
-        //qDebug()<<"chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
+        //LLOG_DEBUG << "chat_user_wid sizeHint is " << chat_user_wid->sizeHint();
         item->setSizeHint(apply_item->sizeHint());
         item->setFlags(item->flags() & ~Qt::ItemIsEnabled & ~Qt::ItemIsSelectable);
         ui->apply_friend_list->insertItem(0,item);

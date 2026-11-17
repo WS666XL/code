@@ -1,5 +1,6 @@
 #pragma once
 #include "const.h"
+#include "Logger.h"
 #include <thread>
 #include <atomic>
 #include <condition_variable>
@@ -51,7 +52,7 @@ public:
 			_check_thread.detach();
 		}
 		catch (sql::SQLException& e) {
-			std::cout << "mysql pool init failed, error is " << e.what() << std::endl;
+			LLOG_INFO << "mysql pool init failed, error is " << e.what() << std::endl;
 		}
 	}
 
@@ -77,7 +78,7 @@ public:
 				con->_last_oper_time = timestamp;
 			}
 			catch (sql::SQLException& e) {
-				std::cout << "Error keeping connection alive: " << e.what() << std::endl;
+				LLOG_INFO << "Error keeping connection alive: " << e.what() << std::endl;
 				// 重新创建连接并替换旧的连接
 				sql::mysql::MySQL_Driver* driver = sql::mysql::get_mysql_driver_instance();
 				auto* newcon = driver->connect(url_, user_, pass_);

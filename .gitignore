@@ -15,6 +15,7 @@ Makefile
 
 # 日志文件
 *.log
+logs/
 
 # 老师参考代码（独立仓库，不纳入本项目）
 llfcchat/

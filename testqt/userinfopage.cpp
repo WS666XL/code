@@ -1,4 +1,5 @@
 #include "userinfopage.h"
+#include "Logger.h"
 #include "usermgr.h"
 #include "global.h"
 #include "filetcpmgr.h"
@@ -71,7 +72,7 @@ UserInfoPage::UserInfoPage(QWidget *parent)
     // 才回的 1032（trans_size==total_size），收到即说明服务器已持久化
     connect(FileTcpMgr::GetInstance().get(), &FileTcpMgr::sig_upload_head_done,
         this, [](const QString& name) {
-            qDebug() << "头像上传完成并已入库：" << name;
+            LLOG_DEBUG << "头像上传完成并已入库：" << name;
         });
 
     // 上传失败弹窗提示（此前静默吞掉 1032 的 error 回包，用户完全看不到失败原因）
@@ -232,7 +233,7 @@ void UserInfoPage::slot_up_load()
     auto uid = UserMgr::GetInstance()->GetUid();
     QDir dir(storage_dir + "/" + QString::number(uid));
     if (!dir.exists("avatars") && !dir.mkpath("avatars")) {
-        qWarning() << "无法创建 avatars 目录：" << dir.filePath("avatars");
+        LLOG_WARN << "无法创建 avatars 目录：" << dir.filePath("avatars");
         QMessageBox::warning(this, tr("错误"),
             tr("无法创建存储目录，请检查权限或磁盘空间。"));
         return;
@@ -244,7 +245,7 @@ void UserInfoPage::slot_up_load()
             tr("头像保存失败，请检查权限或磁盘空间。"));
         return;
     }
-    qDebug() << "头像已保存到：" << file_path;
+    LLOG_DEBUG << "头像已保存到：" << file_path;
 
     // 4.5 先同步 UserMgr 里当前用户的 _icon 为服务器文件名（老师语义：DB icon 存文件名）：
     //     本地回显时 LoadHeadFromLocal 会用文件名拼回 AppData/<uid>/avatars/ 目录。

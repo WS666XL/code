@@ -1,5 +1,6 @@
 #pragma once
 #include "const.h"
+#include "Logger.h"
 #include <thread>
 #include <jdbc/mysql_driver.h>
 #include <jdbc/mysql_connection.h>
@@ -47,7 +48,7 @@ public:
 		}
 		catch (sql::SQLException& e) {
 			// 处理异常
-			std::cout << "mysql pool init failed, error is " << e.what()<< std::endl;
+			LLOG_INFO << "mysql pool init failed, error is " << e.what()<< std::endl;
 		}
 	}
 
@@ -73,10 +74,10 @@ public:
 				std::unique_ptr<sql::Statement> stmt(con->_con->createStatement());
 				stmt->executeQuery("SELECT 1");
 				con->_last_oper_time = timestamp;
-				//std::cout << "execute timer alive query , cur is " << timestamp << std::endl;
+				//LLOG_INFO << "execute timer alive query , cur is " << timestamp << std::endl;
 			}
 			catch (sql::SQLException& e) {
-				std::cout << "Error keeping connection alive: " << e.what() << std::endl;
+				LLOG_INFO << "Error keeping connection alive: " << e.what() << std::endl;
 				// 重新创建连接并替换旧的连接
 				sql::mysql::MySQL_Driver* driver = sql::mysql::get_mysql_driver_instance();
 				auto* newcon = driver->connect(url_, user_, pass_);

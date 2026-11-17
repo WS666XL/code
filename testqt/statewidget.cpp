@@ -1,4 +1,5 @@
 #include "statewidget.h"
+#include "Logger.h"
 #include <QPaintEvent>
 #include <QStyleOption>
 #include <QPainter>
@@ -26,7 +27,7 @@ void StateWidget::paintEvent(QPaintEvent *event)
 void StateWidget::mousePressEvent(QMouseEvent* event)  {
     if (event->button() == Qt::LeftButton) {
         if(_curstate == ClickLbState::Selected){
-            qDebug()<<"PressEvent , already to selected press: "<< _selected_press;
+            LLOG_DEBUG << "PressEvent , already to selected press: "<< _selected_press;
             //emit clicked();
             // 调用基类的mousePressEvent以保证正常的事件处理
             QWidget::mousePressEvent(event);
@@ -34,7 +35,7 @@ void StateWidget::mousePressEvent(QMouseEvent* event)  {
         }
 
         if(_curstate == ClickLbState::Normal){
-            qDebug()<<"PressEvent , change to selected press: "<< _selected_press;
+            LLOG_DEBUG << "PressEvent , change to selected press: "<< _selected_press;
             _curstate = ClickLbState::Selected;
             setProperty("state",_selected_press);
             repolish(this);
@@ -51,13 +52,13 @@ void StateWidget::mouseReleaseEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton) {
         if(_curstate == ClickLbState::Normal){
-            //qDebug()<<"ReleaseEvent , change to normal hover: "<< _normal_hover;
+            //LLOG_DEBUG << "ReleaseEvent , change to normal hover: "<< _normal_hover;
             setProperty("state",_normal_hover);
             repolish(this);
             update();
 
         }else{
-            //qDebug()<<"ReleaseEvent , change to select hover: "<< _selected_hover;
+            //LLOG_DEBUG << "ReleaseEvent , change to select hover: "<< _selected_hover;
             setProperty("state",_selected_hover);
             repolish(this);
             update();
@@ -73,13 +74,13 @@ void StateWidget::mouseReleaseEvent(QMouseEvent *event)
 void StateWidget::enterEvent(QEnterEvent* event) {
     // 在这里处理鼠标悬停进入的逻辑
     if(_curstate == ClickLbState::Normal){
-        //qDebug()<<"enter , change to normal hover: "<< _normal_hover;
+        //LLOG_DEBUG << "enter , change to normal hover: "<< _normal_hover;
         setProperty("state",_normal_hover);
         repolish(this);
         update();
 
     }else{
-        //qDebug()<<"enter , change to selected hover: "<< _selected_hover;
+        //LLOG_DEBUG << "enter , change to selected hover: "<< _selected_hover;
         setProperty("state",_selected_hover);
         repolish(this);
         update();
@@ -92,13 +93,13 @@ void StateWidget::enterEvent(QEnterEvent* event) {
 void StateWidget::leaveEvent(QEvent* event){
     // 在这里处理鼠标悬停离开的逻辑
     if(_curstate == ClickLbState::Normal){
-        // qDebug()<<"leave , change to normal : "<< _normal;
+        // LLOG_DEBUG << "leave , change to normal : "<< _normal;
         setProperty("state",_normal);
         repolish(this);
         update();
 
     }else{
-        // qDebug()<<"leave , change to select normal : "<< _selected;
+        // LLOG_DEBUG << "leave , change to select normal : "<< _selected;
         setProperty("state",_selected);
         repolish(this);
         update();

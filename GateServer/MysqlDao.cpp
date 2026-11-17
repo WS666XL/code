@@ -1,4 +1,5 @@
 #include "MysqlDao.h"
+#include "Logger.h"
 #include"ConfigMgr.h"
 MysqlDao::MysqlDao()
 {
@@ -39,7 +40,7 @@ int MysqlDao::RegUser(const std::string& name, const std::string& email, const s
 		std::unique_ptr<sql::ResultSet> res(stmtResult->executeQuery("SELECT @result AS result"));
 		if (res->next()) {
 			int result = res->getInt("result");
-			std::cout << "Result: " << result << std::endl;
+			LLOG_INFO << "Result: " << result << std::endl;
 			pool_->returnConnection(std::move(con));
 			return result;
 		}
@@ -48,9 +49,9 @@ int MysqlDao::RegUser(const std::string& name, const std::string& email, const s
 	}
 	catch (sql::SQLException& e) {
 		pool_->returnConnection(std::move(con));
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return -1;
 	}
 }
@@ -83,7 +84,7 @@ int MysqlDao::RegUserTransaction(const std::string& name, const std::string& ema
 		auto email_exist = res_email->next();
 		if (email_exist) {
 			con->_con->rollback();
-			std::cout << "email " << email << " exist";
+			LLOG_INFO << "email " << email << " exist";
 			return 0;
 		}
 
@@ -99,7 +100,7 @@ int MysqlDao::RegUserTransaction(const std::string& name, const std::string& ema
 		auto name_exist = res_name->next();
 		if (name_exist) {
 			con->_con->rollback();
-			std::cout << "name " << name << " exist";
+			LLOG_INFO << "name " << name << " exist";
 			return 0;
 		}
 
@@ -118,7 +119,7 @@ int MysqlDao::RegUserTransaction(const std::string& name, const std::string& ema
 			newId = res_uid->getInt("id");
 		}
 		else {
-			std::cout << "select id from user_id failed" << std::endl;
+			LLOG_INFO << "select id from user_id failed" << std::endl;
 			con->_con->rollback();
 			return -1;
 		}
@@ -136,7 +137,7 @@ int MysqlDao::RegUserTransaction(const std::string& name, const std::string& ema
 		pstmt_insert->executeUpdate();
 		// 提交事务
 		con->_con->commit();
-		std::cout << "newuser insert into user success" << std::endl;
+		LLOG_INFO << "newuser insert into user success" << std::endl;
 		return newId;
 	}
 	catch (sql::SQLException& e) {
@@ -144,20 +145,20 @@ int MysqlDao::RegUserTransaction(const std::string& name, const std::string& ema
 		if (con) {
 			con->_con->rollback();
 		}
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return -1;
 	}
 	catch (std::exception& e) {
 		// 非 SQL 异常也要回滚，防止带开事务的连接被归还连接池
 		try { if (con) { con->_con->rollback(); } } catch (...) {}
-		std::cerr << "RegUserTransaction std::exception: " << e.what() << std::endl;
+		LLOG_ERROR << "RegUserTransaction std::exception: " << e.what() << std::endl;
 		return -1;
 	}
 	catch (...) {
 		try { if (con) { con->_con->rollback(); } } catch (...) {}
-		std::cerr << "RegUserTransaction unknown exception" << std::endl;
+		LLOG_ERROR << "RegUserTransaction unknown exception" << std::endl;
 		return -1;
 	}
 }
@@ -180,7 +181,7 @@ bool MysqlDao::CheckEmail(const std::string& name, const std::string& email) {
 
 		// 遍历结果集
 		while (res->next()) {
-			std::cout << "Check Email: " << res->getString("email") << std::endl;
+			LLOG_INFO << "Check Email: " << res->getString("email") << std::endl;
 			if (email != res->getString("email")) {
 				pool_->returnConnection(std::move(con));
 				return false;
@@ -192,9 +193,9 @@ bool MysqlDao::CheckEmail(const std::string& name, const std::string& email) {
 	}
 	catch (sql::SQLException& e) {
 		pool_->returnConnection(std::move(con));
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return false;
 	}
 }
@@ -216,15 +217,15 @@ bool MysqlDao::UpdatePwd(const std::string& name, const std::string& newpwd) {
 		// 执行更新
 		int updateCount = pstmt->executeUpdate();
 
-		std::cout << "Updated rows: " << updateCount << std::endl;
+		LLOG_INFO << "Updated rows: " << updateCount << std::endl;
 		pool_->returnConnection(std::move(con));
 		return true;
 	}
 	catch (sql::SQLException& e) {
 		pool_->returnConnection(std::move(con));
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return false;
 	}
 }
@@ -250,7 +251,7 @@ bool MysqlDao::CheckPwd(const std::string& email, const std::string& pwd, UserIn
 		while (res->next()) {
 			origin_pwd = res->getString("pwd");
 			// 输出查询到的密码
-			std::cout << "Password: " << origin_pwd << std::endl;
+			LLOG_INFO << "Password: " << origin_pwd << std::endl;
 			break;
 		}
 
@@ -267,9 +268,9 @@ bool MysqlDao::CheckPwd(const std::string& email, const std::string& pwd, UserIn
 		return true;
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return false;
 	}
 }
@@ -303,7 +304,7 @@ bool MysqlDao::TestProcedure(const std::string& email, int& uid, std::string& na
 		}
 
 		uid = res->getInt("uid");
-		std::cout << "uid: " << uid << std::endl;
+		LLOG_INFO << "uid: " << uid << std::endl;
 
 		stmtResult.reset(con->_con->createStatement());
 		res.reset(stmtResult->executeQuery("SELECT @userName AS name"));
@@ -312,14 +313,14 @@ bool MysqlDao::TestProcedure(const std::string& email, int& uid, std::string& na
 		}
 
 		name = res->getString("name");
-		std::cout << "name: " << name << std::endl;
+		LLOG_INFO << "name: " << name << std::endl;
 		return true;
 
 	}
 	catch (sql::SQLException& e) {
-		std::cerr << "SQLException: " << e.what();
-		std::cerr << " (MySQL error code: " << e.getErrorCode();
-		std::cerr << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+		LLOG_ERROR << "SQLException: " << e.what();
+		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
+		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
 		return false;
 	}
 }

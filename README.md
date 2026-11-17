@@ -24,10 +24,11 @@
 - [8. 第五步：编译客户端](#8-第五步编译客户端)
 - [9. 第六步：按顺序启动](#9-第六步按顺序启动)
 - [10. 第七步：注册两个账号开始聊天](#10-第七步注册两个账号开始聊天)
-- [11. 常见问题](#11-常见问题)
-- [12. 消息协议速查（想改代码再看）](#12-消息协议速查想改代码再看)
-- [13. 目录结构](#13-目录结构)
-- [14. 分支说明](#14-分支说明)
+- [11. 日志（排查问题先看这里）](#11-日志排查问题先看这里)
+- [12. 常见问题](#12-常见问题)
+- [13. 消息协议速查（想改代码再看）](#13-消息协议速查想改代码再看)
+- [14. 目录结构](#14-目录结构)
+- [15. 分支说明](#15-分支说明)
 
 ---
 
@@ -298,7 +299,66 @@ cd testqt
 
 ---
 
-## 11. 常见问题
+## 11. 日志（排查问题先看这里）
+
+项目不再用 `std::cout` / `qDebug` 打日志，统一走 `common/Logger.h`（基于 spdlog）：
+
+- 同时输出到**控制台**和**文件**
+- 单文件 5MB，最多保留 3 个备份
+- 每条日志都立即落盘，进程崩溃也能看到最后几条
+- 线程安全，密码类配置自动打码
+
+日志位置：
+
+| 程序 | 日志文件 |
+| --- | --- |
+| GateServer | `build/GateServer/logs/gateserver.log` |
+| StatusServer | `build/StatusServer/logs/statusserver.log` |
+| ChatServer | `build/ChatServer/logs/chatserver1.log` |
+| ChatServer2 | `build/ChatServer2/logs/chatserver2.log` |
+| ResourceServer | `build/ResourceServer/logs/reserver.log` |
+| 客户端 | `testqt/bin/logs/client.log` |
+
+格式：
+
+```text
+[2026-11-17 16:42:19.026] [info] [21534] [GateServer.cpp:149] Server started on port 8080
+ 时间                        级别    线程id   文件:行号            内容
+```
+
+改日志级别：
+
+- 服务端：各自的 `config.ini`
+
+```ini
+[Log]
+Level=info      # trace / debug / info / warn / error
+Path=logs
+```
+
+- 客户端：`testqt/config.ini`
+
+```ini
+[Log]
+level=debug
+```
+
+在代码里写日志：
+
+```cpp
+#include "Logger.h"
+
+LLOG_DEBUG << "recv msg id " << msg_id;
+LLOG_INFO  << "user login success, uid=" << uid;
+LLOG_WARN  << "redis reconnect: " << err;
+LLOG_ERROR << "mysql error: " << e.what();
+```
+
+> 写法和原来的 `cout` / `qDebug` 一样，直接接 `<<` 即可。
+
+---
+
+## 12. 常见问题
 
 ### 编译时找不到 jsoncpp / mysqlcppconn
 
@@ -360,7 +420,7 @@ ss -lntp | grep -E "8080|8090|8091|9090"
 
 ---
 
-## 12. 消息协议速查（想改代码再看）
+## 13. 消息协议速查（想改代码再看）
 
 客户端与 ChatServer 之间是 **自定义 TCP 协议**：
 
@@ -400,7 +460,7 @@ ResourceServer 的文件协议是 **6 字节包头**（2 字节消息 ID + 4 字
 
 ---
 
-## 13. 目录结构
+## 14. 目录结构
 
 ```text
 testllfc/
@@ -411,6 +471,7 @@ testllfc/
 ├── ResourceServer/     头像/图片/文件上传下载、断点续传
 ├── VarifyServer/       Node.js gRPC 邮箱验证码服务
 ├── testqt/             Qt6 客户端（qmake 工程 llfcchat.pro）
+├── common/Logger.h     服务端/客户端共用的统一日志
 ├── sql/schema.sql      数据库初始化脚本
 ├── CMakeLists.txt      服务端总构建脚本
 ├── start_servers.sh    一键启动/停止 5 个 C++ 服务
@@ -420,7 +481,7 @@ testllfc/
 
 ---
 
-## 14. 分支说明
+## 15. 分支说明
 
 - `test22`：当前最新自研版本（好友备注/删除好友、删除消息、图片预览等）
 - `test21`：文件/图片断点续传版本

@@ -1,6 +1,6 @@
 #pragma once
 #include <string>
-struct UserInfo {//用户信息
+struct UserInfo {//鐢ㄦ埛淇℃伅
 	UserInfo() :name(""), pwd(""), uid(0), email(""), nick(""), desc(""), sex(0), icon(""), back("") {}
 	std::string name;
 	std::string pwd;
@@ -13,7 +13,7 @@ struct UserInfo {//用户信息
 	std::string back;
 };
 
-struct ApplyInfo {//好友申请信息
+struct ApplyInfo {//濂藉弸鐢宠淇℃伅
 	ApplyInfo(int uid, std::string name, std::string desc,
 		std::string icon, std::string nick, int sex, int status)
 		:_uid(uid), _name(name), _desc(desc),

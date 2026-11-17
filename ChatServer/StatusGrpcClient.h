@@ -46,7 +46,7 @@ public:
 			}
 			return !connections_.empty();
 			});
-		//如果停止则直接返回空指针
+		//濡傛灉鍋滄鍒欑洿鎺ヨ繑鍥炵┖鎸囬拡
 		if (b_stop_) {
 			return  nullptr;
 		}

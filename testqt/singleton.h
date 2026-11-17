@@ -1,5 +1,6 @@
 #ifndef SINGLETON_H
 #define SINGLETON_H
+#include "Logger.h"
 #include <memory>
 #include <mutex>
 #include <iostream>
@@ -27,10 +28,10 @@ public:
         return _instance;
     }
     void PrintAddress() {                  // 调试用：打印实例地址，可验证两次调用拿到的是同一个对象
-        std::cout << _instance.get() << endl;
+        LLOG_DEBUG << _instance.get() << endl;
     }
     ~Singleton() {
-        std::cout << "this is singleton destruct" << std::endl;
+        LLOG_DEBUG << "this is singleton destruct" << std::endl;
     }
 };
 

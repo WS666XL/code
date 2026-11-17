@@ -1,4 +1,5 @@
 #include "filetcpmgr.h"
+#include "Logger.h"
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QDataStream>
@@ -22,7 +23,7 @@ FileTcpMgr::FileTcpMgr(QObject* parent)
 {
     // 连接建立：通知外界"资源服务器链路可用"，可以开始发上传请求了
     QObject::connect(&_socket, &QTcpSocket::connected, [this]() {
-        qDebug() << "FileTcpMgr connected to resource server!";
+        LLOG_DEBUG << "FileTcpMgr connected to resource server!";
         // 重连后旧的窗口/排队状态全部作废：旧连接上的在途分块不会再有回执，
         // 不清零的话 _cwnd_size 会永久占满，后续上传全部被卡住
         _cwnd_size = 0;
@@ -79,7 +80,7 @@ FileTcpMgr::FileTcpMgr(QObject* parent)
     // Qt 5.15+ 的统一错误信号：连接被拒、找不到主机、断线等都在这里先打日志
     QObject::connect(&_socket, QOverload<QAbstractSocket::SocketError>::of(&QTcpSocket::errorOccurred),
         [this](QAbstractSocket::SocketError socketError) {
-        qDebug() << "FileTcpMgr socket error:" << _socket.errorString();
+        LLOG_DEBUG << "FileTcpMgr socket error:" << _socket.errorString();
         // 只把"根本没连上"的致命错误当连接失败上报（sig_res_connect(false)），
         // 断线场景由下面的 disconnected 信号统一处理，避免重复通知
         if (socketError == QAbstractSocket::ConnectionRefusedError ||
@@ -90,7 +91,7 @@ FileTcpMgr::FileTcpMgr(QObject* parent)
 
     // 断开：资源服务器主动关连接或网络异常都会走到这里
     QObject::connect(&_socket, &QTcpSocket::disconnected, [this]() {
-        qDebug() << "FileTcpMgr disconnected from resource server.";
+        LLOG_DEBUG << "FileTcpMgr disconnected from resource server.";
         // 断线后必须清掉残留的半包状态，否则下次重连会把旧数据当新包头解析
         _buffer.clear();
         _b_recv_pending = false;
@@ -118,19 +119,19 @@ void FileTcpMgr::initHandlers()
     // 收到即说明"客户端 ↔ 资源服务器"整条链路（连接/组包/解包/base64）都是通的
     _handlers.insert(RES_ID_TEST_MSG_RSP, [this](quint16 id, int len, QByteArray data) {
         Q_UNUSED(len);
-        qDebug() << "FileTcpMgr handle id is " << id;
+        LLOG_DEBUG << "FileTcpMgr handle id is " << id;
         QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
         if (jsonDoc.isNull()) {
-            qDebug() << "FileTcpMgr test rsp json parse failed";
+            LLOG_DEBUG << "FileTcpMgr test rsp json parse failed";
             return;
         }
         QJsonObject jsonObj = jsonDoc.object();
         if (!jsonObj.contains("error")) {
-            qDebug() << "FileTcpMgr test rsp missing error field";
+            LLOG_DEBUG << "FileTcpMgr test rsp missing error field";
             return;
         }
         if (jsonObj["error"].toInt() != ErrorCodes::SUCCESS) {
-            qDebug() << "FileTcpMgr test rsp error is " << jsonObj["error"].toInt();
+            LLOG_DEBUG << "FileTcpMgr test rsp error is " << jsonObj["error"].toInt();
             return;
         }
         // 回显内容通过信号抛出去；当前阶段没有界面接收，收到只打日志
@@ -141,22 +142,22 @@ void FileTcpMgr::initHandlers()
     // {error, total_size, seq, name, trans_size, last}
     _handlers.insert(RES_ID_UPLOAD_FILE_RSP, [this](quint16 id, int len, QByteArray data) {
         Q_UNUSED(len);
-        qDebug() << "FileTcpMgr handle id is " << id;
+        LLOG_DEBUG << "FileTcpMgr handle id is " << id;
         QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
         if (jsonDoc.isNull()) {
-            qDebug() << "FileTcpMgr upload rsp json parse failed";
+            LLOG_DEBUG << "FileTcpMgr upload rsp json parse failed";
             return;
         }
         QJsonObject jsonObj = jsonDoc.object();
         if (!jsonObj.contains("error")) {
-            qDebug() << "FileTcpMgr upload rsp missing error field";
+            LLOG_DEBUG << "FileTcpMgr upload rsp missing error field";
             return;
         }
         int err = jsonObj["error"].toInt();
         QString md5 = jsonObj["md5"].toString();
         QString name = jsonObj["name"].toString();
         if (err != ErrorCodes::SUCCESS) {
-            qDebug() << "FileTcpMgr upload rsp error is " << err;
+            LLOG_DEBUG << "FileTcpMgr upload rsp error is " << err;
             // 服务端进度丢了（Redis 过期/重启）：已经确认过至少一块的话，
             // 自动回到第 1 块重传（服务端 seq==1 会 truncate 旧 .part，不会拼坏）
             auto iter = _simple_uploads.find(md5);
@@ -188,7 +189,7 @@ void FileTcpMgr::initHandlers()
 
         iter->last_confirmed_seq = seq;
         if (last == 1 || seq >= iter->max_seq) {
-            qDebug() << "FileTcpMgr upload done:" << name;
+            LLOG_DEBUG << "FileTcpMgr upload done:" << name;
             _simple_uploads.erase(iter);
             emit sig_upload_done(name);
             return;
@@ -205,12 +206,12 @@ void FileTcpMgr::initHandlers()
         Q_UNUSED(len);
         QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
         if (jsonDoc.isNull()) {
-            qDebug() << "FileTcpMgr sync file rsp json parse failed";
+            LLOG_DEBUG << "FileTcpMgr sync file rsp json parse failed";
             return;
         }
         QJsonObject jsonObj = jsonDoc.object();
         if (!jsonObj.contains("error")) {
-            qDebug() << "FileTcpMgr sync file rsp missing error field";
+            LLOG_DEBUG << "FileTcpMgr sync file rsp missing error field";
             return;
         }
 
@@ -222,14 +223,14 @@ void FileTcpMgr::initHandlers()
 
         auto msg_info = UserMgr::GetInstance()->GetTransFileByName(name);
         if (!msg_info) {
-            qDebug() << "FileTcpMgr sync file rsp: trans file not found:" << name;
+            LLOG_DEBUG << "FileTcpMgr sync file rsp: trans file not found:" << name;
             return;
         }
 
         if (err == RES_FILE_NOT_EXISTS) {
             // 服务器没有进度（Redis 过期/上次已传完并清理）：从第 1 块重传。
             // 服务端收到 seq==1 会 truncate 掉可能残留的 .part，所以不会拼坏文件
-            qDebug() << "FileTcpMgr sync file: no progress, restart upload" << name;
+            LLOG_DEBUG << "FileTcpMgr sync file: no progress, restart upload" << name;
             msg_info->_seq = 0;
             msg_info->_last_confirmed_seq = 0;
             msg_info->_rsp_size = 0;
@@ -238,7 +239,7 @@ void FileTcpMgr::initHandlers()
             _cwnd_size = 0;
         }
         else if (err != RES_SUCCESS) {
-            qDebug() << "FileTcpMgr sync file rsp error:" << err << name;
+            LLOG_DEBUG << "FileTcpMgr sync file rsp error:" << err << name;
             msg_info->_transfer_state = TransferState::Failed;
             emit sig_chat_upload_failed(name);
             return;
@@ -246,7 +247,7 @@ void FileTcpMgr::initHandlers()
         else {
             // 服务器已确认到 seq：把已发游标拨回去，BatchSend 会 seek 到 seq*32KB 继续发。
             // 清空在途/窗口记录：续传后以服务器进度为准，旧连接的迟到回执不再放行窗口
-            qDebug() << "FileTcpMgr sync file resume:" << name
+            LLOG_DEBUG << "FileTcpMgr sync file resume:" << name
                      << "seq" << seq << "trans" << trans_size << "/" << total_size;
             msg_info->_seq = qMax<qint64>(0, seq);
             msg_info->_last_confirmed_seq = static_cast<int>(seq);
@@ -281,15 +282,15 @@ void FileTcpMgr::initHandlers()
     // 所以收到 trans_size==total_size 的 1032 就代表"头像已完整入库"，而不是仅仅收完
     _handlers.insert(RES_ID_UPLOAD_HEAD_ICON_RSP, [this](quint16 id, int len, QByteArray data) {
         Q_UNUSED(len);
-        qDebug() << "FileTcpMgr handle id is " << id;
+        LLOG_DEBUG << "FileTcpMgr handle id is " << id;
         QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
         if (jsonDoc.isNull()) {
-            qDebug() << "FileTcpMgr head icon rsp json parse failed";
+            LLOG_DEBUG << "FileTcpMgr head icon rsp json parse failed";
             return;
         }
         QJsonObject jsonObj = jsonDoc.object();
         if (!jsonObj.contains("error")) {
-            qDebug() << "FileTcpMgr head icon rsp missing error field";
+            LLOG_DEBUG << "FileTcpMgr head icon rsp missing error field";
             return;
         }
         QString md5 = jsonObj["md5"].toString();
@@ -308,7 +309,7 @@ void FileTcpMgr::initHandlers()
 
             // 常见错误：1010 token 失效 / 1011 uid 无效（Redis 查不到 token）——
             // 一般是登录态过期后仍尝试上传，提示用户重新登录即可
-            qDebug() << "FileTcpMgr head icon upload failed, err is" << err;
+            LLOG_DEBUG << "FileTcpMgr head icon upload failed, err is" << err;
             _simple_uploads.remove(md5);
             emit sig_upload_head_failed(err);
             return;
@@ -330,7 +331,7 @@ void FileTcpMgr::initHandlers()
 
         iter->last_confirmed_seq = seq;
         if (seq >= iter->max_seq || trans_size == total_size) {
-            qDebug() << "FileTcpMgr head icon upload done:" << name
+            LLOG_DEBUG << "FileTcpMgr head icon upload done:" << name
                      << "total_size" << total_size;
             _simple_uploads.erase(iter);
             emit sig_upload_head_done(name);
@@ -351,12 +352,12 @@ void FileTcpMgr::initHandlers()
         Q_UNUSED(len);
         QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
         if (jsonDoc.isNull()) {
-            qDebug() << "FileTcpMgr img chat upload rsp json parse failed";
+            LLOG_DEBUG << "FileTcpMgr img chat upload rsp json parse failed";
             return;
         }
         QJsonObject jsonObj = jsonDoc.object();
         if (!jsonObj.contains("error")) {
-            qDebug() << "FileTcpMgr img chat upload rsp missing error field";
+            LLOG_DEBUG << "FileTcpMgr img chat upload rsp missing error field";
             return;
         }
         int err = jsonObj["error"].toInt();
@@ -364,7 +365,7 @@ void FileTcpMgr::initHandlers()
         auto msg_info = UserMgr::GetInstance()->GetTransFileByName(name);
 
         if (err != ErrorCodes::SUCCESS) {
-            qDebug() << "FileTcpMgr img chat upload failed, err is" << err
+            LLOG_DEBUG << "FileTcpMgr img chat upload failed, err is" << err
                      << "name is" << name;
             int err_seq = jsonObj["seq"].toInt();
             // 服务端进度丢了（Redis 过期/重启）：从第 1 块自动重传一次。
@@ -425,7 +426,7 @@ void FileTcpMgr::initHandlers()
 
         if (msg_info->_max_seq > 0 && msg_info->_last_confirmed_seq >= msg_info->_max_seq) {
             // 所有块都已确认：本次上传结束，把窗口让给排队中的下一个文件
-            qDebug() << "FileTcpMgr img chat upload done:" << name
+            LLOG_DEBUG << "FileTcpMgr img chat upload done:" << name
                      << "blocks" << msg_info->_max_seq;
             msg_info->_rsp_size = msg_info->_total_size;
             emit sig_chat_upload_progress(name, msg_info->_total_size, msg_info->_total_size);
@@ -450,12 +451,12 @@ void FileTcpMgr::initHandlers()
         Q_UNUSED(len);
         QJsonDocument jsonDoc = QJsonDocument::fromJson(data);
         if (jsonDoc.isNull()) {
-            qDebug() << "FileTcpMgr download rsp json parse failed";
+            LLOG_DEBUG << "FileTcpMgr download rsp json parse failed";
             return;
         }
         QJsonObject jsonObj = jsonDoc.object();
         if (!jsonObj.contains("error")) {
-            qDebug() << "FileTcpMgr download rsp missing error field";
+            LLOG_DEBUG << "FileTcpMgr download rsp missing error field";
             return;
         }
         int err = jsonObj["error"].toInt();
@@ -469,7 +470,7 @@ void FileTcpMgr::initHandlers()
         if (err != ErrorCodes::SUCCESS) {
             // 常见错误：1012 文件不存在、1017 序号接不上（服务器进度丢了/对不上）、
             // 1010/1011 登录态失效
-            qDebug() << "FileTcpMgr download failed, err is" << err
+            LLOG_DEBUG << "FileTcpMgr download failed, err is" << err
                      << "name is" << name << "seq" << seq;
 
             // 断点续传失败回退：聊天图片/文件（唯一文件名）本地 .tmp 还有半截，
@@ -477,7 +478,7 @@ void FileTcpMgr::initHandlers()
             // 只重试一次，避免「续传失败→重下→再失败」死循环
             if (ctx_iter != _downloading.end() && seq > 1
                 && ctx_iter->resume_allowed && !ctx_iter->resume_tried) {
-                qDebug() << "FileTcpMgr download resume failed, restart from 1:" << name;
+                LLOG_DEBUG << "FileTcpMgr download resume failed, restart from 1:" << name;
                 QFile::remove(ctx_iter->client_path + ".tmp");
                 ctx_iter->next_seq = 1;
                 ctx_iter->in_flight = true;
@@ -495,7 +496,7 @@ void FileTcpMgr::initHandlers()
         }
 
         if (ctx_iter == _downloading.end()) {
-            qDebug() << "FileTcpMgr download rsp for unknown file:" << name
+            LLOG_DEBUG << "FileTcpMgr download rsp for unknown file:" << name
                      << ctx_key;
             return;
         }
@@ -517,7 +518,7 @@ void FileTcpMgr::initHandlers()
             : (QIODevice::WriteOnly | QIODevice::Append);
         QFile file(write_path);
         if (!file.open(mode)) {
-            qDebug() << "FileTcpMgr download open file failed:" << write_path
+            LLOG_DEBUG << "FileTcpMgr download open file failed:" << write_path
                      << file.errorString();
             _downloading.erase(ctx_iter);
             emit sig_download_failed(name);
@@ -531,7 +532,7 @@ void FileTcpMgr::initHandlers()
         emit sig_chat_download_progress(name, current_size, total_size);
 
         if (is_last) {
-            qDebug() << "FileTcpMgr download done:" << name
+            LLOG_DEBUG << "FileTcpMgr download done:" << name
                      << "->" << ctx_iter->client_path;
             // 原子替换：移走旧文件后把写好的临时文件改成正式文件
             QFile::remove(ctx_iter->client_path);
@@ -558,7 +559,7 @@ void FileTcpMgr::handleMsg(quint16 id, int len, QByteArray data)
     auto find_iter = _handlers.find(id);
     if (find_iter == _handlers.end()) {
         // 未知 ID 不处理：资源服务器后续加新消息类型时客户端没跟上也不会崩
-        qDebug() << "FileTcpMgr not found id [" << id << "] to handle";
+        LLOG_DEBUG << "FileTcpMgr not found id [" << id << "] to handle";
         return;
     }
     find_iter.value()(id, len, data);
@@ -568,7 +569,7 @@ void FileTcpMgr::handleMsg(quint16 id, int len, QByteArray data)
 // 结果通过 sig_res_connect(bool) 异步反馈（连接成功/失败都是事件驱动的）
 void FileTcpMgr::ConnectResServer(const QString& host, quint16 port)
 {
-    qDebug() << "FileTcpMgr connecting to resource server" << host << ":" << port;
+    LLOG_DEBUG << "FileTcpMgr connecting to resource server" << host << ":" << port;
     _host = host;
     _port = port;
     _socket.connectToHost(host, port);
@@ -586,7 +587,7 @@ void FileTcpMgr::slot_send_data(quint16 id, QByteArray body)
 {
     // 连接异常直接丢弃，避免往未连接的 socket 写数据
     if (_socket.state() != QAbstractSocket::ConnectedState) {
-        qDebug() << "FileTcpMgr slot_send_data: not connected, drop msg id" << id;
+        LLOG_DEBUG << "FileTcpMgr slot_send_data: not connected, drop msg id" << id;
         return;
     }
 
@@ -605,7 +606,7 @@ void FileTcpMgr::slot_send_data(quint16 id, QByteArray body)
 bool FileTcpMgr::UploadFile(QString path)
 {
     if (_socket.state() != QAbstractSocket::ConnectedState) {
-        qDebug() << "FileTcpMgr UploadFile failed: resource server not connected";
+        LLOG_DEBUG << "FileTcpMgr UploadFile failed: resource server not connected";
         return false;
     }
     return StartSimpleUpload(path, RES_ID_UPLOAD_FILE_REQ);
@@ -616,7 +617,7 @@ bool FileTcpMgr::UploadFile(QString path)
 bool FileTcpMgr::UploadHeadIcon(QString path)
 {
     if (_socket.state() != QAbstractSocket::ConnectedState) {
-        qDebug() << "FileTcpMgr UploadHeadIcon failed: resource server not connected";
+        LLOG_DEBUG << "FileTcpMgr UploadHeadIcon failed: resource server not connected";
         return false;
     }
     return StartSimpleUpload(path, RES_ID_UPLOAD_HEAD_ICON_REQ);
@@ -630,7 +631,7 @@ bool FileTcpMgr::StartSimpleUpload(const QString& path, short req_id)
 {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
-        qDebug() << "FileTcpMgr StartSimpleUpload could not open file:"
+        LLOG_DEBUG << "FileTcpMgr StartSimpleUpload could not open file:"
                  << file.errorString();
         return false;
     }
@@ -639,7 +640,7 @@ bool FileTcpMgr::StartSimpleUpload(const QString& path, short req_id)
     QCryptographicHash hash(QCryptographicHash::Md5);
     qint64 originalPos = file.pos();
     if (!hash.addData(&file)) {
-        qDebug() << "FileTcpMgr StartSimpleUpload failed to read:" << path;
+        LLOG_DEBUG << "FileTcpMgr StartSimpleUpload failed to read:" << path;
         file.close();
         return false;
     }
@@ -650,7 +651,7 @@ bool FileTcpMgr::StartSimpleUpload(const QString& path, short req_id)
     QFileInfo fileInfo(path);
     qint64 total_size = fileInfo.size();
     if (total_size <= 0) {
-        qDebug() << "FileTcpMgr StartSimpleUpload: empty file, skip";
+        LLOG_DEBUG << "FileTcpMgr StartSimpleUpload: empty file, skip";
         return false;
     }
 
@@ -665,7 +666,7 @@ bool FileTcpMgr::StartSimpleUpload(const QString& path, short req_id)
     ctx.req_id = req_id;
 
     _simple_uploads[file_md5] = ctx;
-    qDebug() << "FileTcpMgr StartSimpleUpload:" << ctx.name
+    LLOG_DEBUG << "FileTcpMgr StartSimpleUpload:" << ctx.name
              << "total" << total_size << "blocks" << ctx.max_seq;
     SendNextSimpleChunk(file_md5);
     return true;
@@ -686,7 +687,7 @@ void FileTcpMgr::SendNextSimpleChunk(const QString& md5)
 
     QFile file(ctx.path);
     if (!file.open(QIODevice::ReadOnly)) {
-        qDebug() << "FileTcpMgr SendNextSimpleChunk open failed:"
+        LLOG_DEBUG << "FileTcpMgr SendNextSimpleChunk open failed:"
                  << ctx.path << file.errorString();
         _simple_uploads.erase(iter);
         return;
@@ -731,7 +732,7 @@ void FileTcpMgr::PauseUpload(const QString& name)
         return;
     }
     msg_info->_transfer_state = TransferState::Paused;
-    qDebug() << "FileTcpMgr pause upload:" << name;
+    LLOG_DEBUG << "FileTcpMgr pause upload:" << name;
 }
 
 void FileTcpMgr::ResumeUpload(const QString& name)
@@ -760,7 +761,7 @@ void FileTcpMgr::ResumeUpload(const QString& name)
         return;
     }
 
-    qDebug() << "FileTcpMgr resume upload, sync progress:" << name;
+    LLOG_DEBUG << "FileTcpMgr resume upload, sync progress:" << name;
     SendSyncUploadReq(msg_info->_md5, name);
 }
 
@@ -822,7 +823,7 @@ void FileTcpMgr::PauseDownload(const QString& name)
         return;
     }
     ctx->paused = true;
-    qDebug() << "FileTcpMgr pause download:" << name;
+    LLOG_DEBUG << "FileTcpMgr pause download:" << name;
 }
 
 void FileTcpMgr::ResumeDownload(const QString& name)
@@ -867,7 +868,7 @@ void FileTcpMgr::SendDownloadReq(const QString& fileName, int ownerUid,
 void FileTcpMgr::DownloadAvatar(const QString& iconFileName, int ownerUid)
 {
     if (_socket.state() != QAbstractSocket::ConnectedState) {
-        qDebug() << "FileTcpMgr DownloadAvatar failed: resource server not connected";
+        LLOG_DEBUG << "FileTcpMgr DownloadAvatar failed: resource server not connected";
         return;
     }
     if (iconFileName.isEmpty()) {
@@ -880,7 +881,7 @@ void FileTcpMgr::DownloadAvatar(const QString& iconFileName, int ownerUid)
     QString avatar_dir = storage_dir + "/" + QString::number(ownerUid) + "/avatars";
     QDir dir(avatar_dir);
     if (!dir.exists() && !dir.mkpath(".")) {
-        qDebug() << "FileTcpMgr DownloadAvatar mkpath failed:" << avatar_dir;
+        LLOG_DEBUG << "FileTcpMgr DownloadAvatar mkpath failed:" << avatar_dir;
         return;
     }
     QString client_path = dir.filePath(iconFileName);
@@ -901,7 +902,7 @@ void FileTcpMgr::DownloadAvatar(const QString& iconFileName, int ownerUid)
     ctx.resume_allowed = false;
     _downloading.insert(client_path, ctx);
 
-    qDebug() << "FileTcpMgr DownloadAvatar start:" << iconFileName
+    LLOG_DEBUG << "FileTcpMgr DownloadAvatar start:" << iconFileName
              << "owner" << ownerUid;
     SendDownloadReq(iconFileName, ownerUid, client_path, 1);
 }
@@ -912,7 +913,7 @@ void FileTcpMgr::DownloadAvatar(const QString& iconFileName, int ownerUid)
 void FileTcpMgr::DownloadChatImage(const QString& imgName, int senderUid)
 {
     if (_socket.state() != QAbstractSocket::ConnectedState) {
-        qDebug() << "FileTcpMgr DownloadChatImage failed: resource server not connected";
+        LLOG_DEBUG << "FileTcpMgr DownloadChatImage failed: resource server not connected";
         return;
     }
     if (imgName.isEmpty()) {
@@ -924,7 +925,7 @@ void FileTcpMgr::DownloadChatImage(const QString& imgName, int senderUid)
                       + "/chatimg/" + QString::number(senderUid);
     QDir dir(img_dir);
     if (!dir.exists() && !dir.mkpath(".")) {
-        qDebug() << "FileTcpMgr DownloadChatImage mkpath failed:" << img_dir;
+        LLOG_DEBUG << "FileTcpMgr DownloadChatImage mkpath failed:" << img_dir;
         return;
     }
     QString client_path = dir.filePath(imgName);
@@ -939,7 +940,7 @@ void FileTcpMgr::DownloadChatImage(const QString& imgName, int senderUid)
     if (tmp_info.exists() && tmp_info.size() > 0) {
         if (tmp_info.size() % MAX_FILE_LEN == 0) {
             start_seq = int(tmp_info.size() / MAX_FILE_LEN) + 1;
-            qDebug() << "FileTcpMgr DownloadChatImage resume from seq" << start_seq
+            LLOG_DEBUG << "FileTcpMgr DownloadChatImage resume from seq" << start_seq
                      << imgName;
         }
         else {
@@ -956,7 +957,7 @@ void FileTcpMgr::DownloadChatImage(const QString& imgName, int senderUid)
     ctx.resume_allowed = true;   //唯一文件名，安全续传
     _downloading.insert(client_path, ctx);
 
-    qDebug() << "FileTcpMgr DownloadChatImage start:" << imgName
+    LLOG_DEBUG << "FileTcpMgr DownloadChatImage start:" << imgName
              << "sender" << senderUid << "seq" << start_seq;
     SendDownloadReq(imgName, senderUid, ctx.client_path, start_seq);
 }
@@ -967,7 +968,7 @@ void FileTcpMgr::DownloadChatImage(const QString& imgName, int senderUid)
 void FileTcpMgr::DownloadChatFile(const QString& fileName, int senderUid)
 {
     if (_socket.state() != QAbstractSocket::ConnectedState) {
-        qDebug() << "FileTcpMgr DownloadChatFile failed: resource server not connected";
+        LLOG_DEBUG << "FileTcpMgr DownloadChatFile failed: resource server not connected";
         return;
     }
     if (fileName.isEmpty()) {
@@ -979,7 +980,7 @@ void FileTcpMgr::DownloadChatFile(const QString& fileName, int senderUid)
                        + "/chatfile/" + QString::number(senderUid);
     QDir dir(file_dir);
     if (!dir.exists() && !dir.mkpath(".")) {
-        qDebug() << "FileTcpMgr DownloadChatFile mkpath failed:" << file_dir;
+        LLOG_DEBUG << "FileTcpMgr DownloadChatFile mkpath failed:" << file_dir;
         return;
     }
     QString client_path = dir.filePath(fileName);
@@ -993,7 +994,7 @@ void FileTcpMgr::DownloadChatFile(const QString& fileName, int senderUid)
     if (tmp_info.exists() && tmp_info.size() > 0) {
         if (tmp_info.size() % MAX_FILE_LEN == 0) {
             start_seq = int(tmp_info.size() / MAX_FILE_LEN) + 1;
-            qDebug() << "FileTcpMgr DownloadChatFile resume from seq" << start_seq
+            LLOG_DEBUG << "FileTcpMgr DownloadChatFile resume from seq" << start_seq
                      << fileName;
         }
         else {
@@ -1010,7 +1011,7 @@ void FileTcpMgr::DownloadChatFile(const QString& fileName, int senderUid)
     ctx.resume_allowed = true;
     _downloading.insert(client_path, ctx);
 
-    qDebug() << "FileTcpMgr DownloadChatFile start:" << fileName
+    LLOG_DEBUG << "FileTcpMgr DownloadChatFile start:" << fileName
              << "sender" << senderUid << "seq" << start_seq;
     SendDownloadReq(fileName, senderUid, ctx.client_path, start_seq);
 }
@@ -1025,21 +1026,21 @@ void FileTcpMgr::DownloadChatFile(const QString& fileName, int senderUid)
 bool FileTcpMgr::UploadChatImage(const QString& uniqueName)
 {
     if (_socket.state() != QAbstractSocket::ConnectedState) {
-        qDebug() << "FileTcpMgr UploadChatImage failed: resource server not connected";
+        LLOG_DEBUG << "FileTcpMgr UploadChatImage failed: resource server not connected";
         return false;
     }
 
     auto msg_info = UserMgr::GetInstance()->GetTransFileByName(uniqueName);
     if (!msg_info) {
-        qDebug() << "FileTcpMgr UploadChatImage: trans file not found:" << uniqueName;
+        LLOG_DEBUG << "FileTcpMgr UploadChatImage: trans file not found:" << uniqueName;
         return false;
     }
     if (msg_info->_msg_id <= 0) {
-        qDebug() << "FileTcpMgr UploadChatImage: message_id not ready for" << uniqueName;
+        LLOG_DEBUG << "FileTcpMgr UploadChatImage: message_id not ready for" << uniqueName;
         return false;
     }
     if (msg_info->_total_size <= 0) {
-        qDebug() << "FileTcpMgr UploadChatImage: empty file, skip" << uniqueName;
+        LLOG_DEBUG << "FileTcpMgr UploadChatImage: empty file, skip" << uniqueName;
         return false;
     }
 
@@ -1059,7 +1060,7 @@ bool FileTcpMgr::UploadChatImage(const QString& uniqueName)
         if (!_pending_uploads.contains(uniqueName)) {
             _pending_uploads.enqueue(uniqueName);
         }
-        qDebug() << "FileTcpMgr upload queued:" << uniqueName
+        LLOG_DEBUG << "FileTcpMgr upload queued:" << uniqueName
                  << "pending" << _pending_uploads.size();
         return true;
     }
@@ -1090,7 +1091,7 @@ void FileTcpMgr::BatchSend(std::shared_ptr<MsgInfo> msg_info)
 
     QFile file(msg_info->content);   //content 存的是本地路径
     if (!file.open(QIODevice::ReadOnly)) {
-        qDebug() << "FileTcpMgr BatchSend could not open file:"
+        LLOG_DEBUG << "FileTcpMgr BatchSend could not open file:"
                  << msg_info->content << file.errorString();
         return;
     }
@@ -1132,7 +1133,7 @@ void FileTcpMgr::BatchSend(std::shared_ptr<MsgInfo> msg_info)
     }
 
     file.close();
-    qDebug() << "FileTcpMgr BatchSend:" << msg_info->_unique_name
+    LLOG_DEBUG << "FileTcpMgr BatchSend:" << msg_info->_unique_name
              << "sent seq" << msg_info->_seq << "/" << msg_info->_max_seq
              << "cwnd" << _cwnd_size;
 }
@@ -1148,7 +1149,7 @@ void FileTcpMgr::StartNextUpload()
             continue;
         }
         _active_upload = name;
-        qDebug() << "FileTcpMgr start next upload:" << name;
+        LLOG_DEBUG << "FileTcpMgr start next upload:" << name;
         BatchSend(msg_info);
         return;
     }

@@ -1,4 +1,5 @@
 #include "registerdialog.h"
+#include "Logger.h"
 #include "ui_registerdialog.h"
 #include"global.h"
 #include"httpmgr.h"
@@ -66,7 +67,7 @@ RegisterDialog::RegisterDialog(QWidget *parent)
         }else{
             ui->pass_edit->setEchoMode(QLineEdit::Normal);
         }
-        qDebug() << "Label was clicked!";
+        LLOG_DEBUG << "Label was clicked!";
     });
 
     connect(ui->confirm_visible, &ClickedLabel::clicked, this, [this]() {
@@ -76,7 +77,7 @@ RegisterDialog::RegisterDialog(QWidget *parent)
         }else{
             ui->confirm_edit->setEchoMode(QLineEdit::Normal);
         }
-        qDebug() << "Label was clicked!";
+        LLOG_DEBUG << "Label was clicked!";
     });
     // 创建定时器
     _countdown_timer = new QTimer(this);
@@ -95,7 +96,7 @@ RegisterDialog::RegisterDialog(QWidget *parent)
 
 RegisterDialog::~RegisterDialog()
 {
-    qDebug()<<"~RegisterDialog()";
+    LLOG_DEBUG << "~RegisterDialog()";
     delete ui;
 }
 
@@ -167,7 +168,7 @@ void RegisterDialog::initHttpHandlers()
         }
         auto email = jsonObj["email"].toString(); // 后端回显的邮箱，用于确认发给谁了
         showTip(tr("验证码已发送到邮箱，注意查收"), true);
-        qDebug()<< "email is " << email ;
+        LLOG_DEBUG << "email is " << email ;
     });
     //注册注册用户回包逻辑
     _handlers.insert(ReqId::ID_REG_USER, [this](QJsonObject jsonObj){
@@ -177,10 +178,10 @@ void RegisterDialog::initHttpHandlers()
             return;
         }
         auto email = jsonObj["email"].toString();
-       // qDebug()<<"user uuid is"<<jsonObj["uuid"].toString();
-        qDebug()<<"user uuid is"<<jsonObj["uid"].toString();
+       // LLOG_DEBUG << "user uuid is"<<jsonObj["uuid"].toString();
+        LLOG_DEBUG << "user uuid is"<<jsonObj["uid"].toString();
         showTip(tr("用户注册成功"), true);
-        qDebug()<< "email is " << email ;
+        LLOG_DEBUG << "email is " << email ;
         ChangeTipPage();
     });
 }

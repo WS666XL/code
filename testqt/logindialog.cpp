@@ -1,4 +1,5 @@
 #include "logindialog.h"
+#include "Logger.h"
 #include "ui_logindialog.h"
 #include<QDebug>
 #include<QPainter>
@@ -40,13 +41,13 @@ LoginDialog::LoginDialog(QWidget *parent)
 
 LoginDialog::~LoginDialog()
 {
-    qDebug()<<"~LoginDialog()";
+    LLOG_DEBUG << "~LoginDialog()";
     delete ui;   // ui 是 new 出来的，需要手动释放
 }
 
 void LoginDialog::slot_forget_pwd()
 {
-    qDebug()<<"slot forget pwd";
+    LLOG_DEBUG << "slot forget pwd";
     emit switchReset();
 }
 
@@ -55,7 +56,7 @@ void LoginDialog::initHead()
     // 加载图片
     QPixmap originalPixmap(":/res/gdjd.jpg");
     // 设置图片自动缩放
-    qDebug()<< originalPixmap.size() << ui->head_label->size();
+    LLOG_DEBUG << originalPixmap.size() << " " << ui->head_label->size();
     originalPixmap = originalPixmap.scaled(ui->head_label->size(),
                                            Qt::KeepAspectRatio, Qt::SmoothTransformation);
 
@@ -83,7 +84,7 @@ bool LoginDialog::checkUserValid(){
 
     auto email = ui->email_edit->text();
     if(email.isEmpty()){
-        qDebug() << "email empty " ;
+        LLOG_DEBUG << "email empty " ;
         AddTipErr(TipErr::TIP_EMAIL_ERR, tr("邮箱不能为空"));
         return false;
     }
@@ -94,7 +95,7 @@ bool LoginDialog::checkUserValid(){
 bool LoginDialog::checkPwdValid(){
     auto pwd = ui->pass_edit->text();
     if(pwd.length() < 6 || pwd.length() > 15){
-        qDebug() << "Pass length invalid";
+        LLOG_DEBUG << "Pass length invalid";
         //提示长度不准确
         AddTipErr(TipErr::TIP_PWD_ERR, tr("密码长度应为6~15"));
         return false;
@@ -156,7 +157,7 @@ bool LoginDialog::enableBtn(bool enabled)
 
 void LoginDialog::on_login_btn_clicked()
 {
-    qDebug()<<"login btn clicked";
+    LLOG_DEBUG << "login btn clicked";
     if(checkUserValid() == false){
         return;
     }
@@ -252,7 +253,7 @@ void LoginDialog::initHttpHandlers()
 
         _uid = si.Uid;
         _token = si.Token;
-        qDebug()<< "email is " << email << " uid is " << si.Uid <<" host is "
+        LLOG_DEBUG << "email is " << email << " uid is " << si.Uid <<" host is "
                  << si.Host << " Port is " << si.Port << " Token is " << si.Token
                  << " res host is " << si.ResHost << " res port is " << si.ResPort;
         emit sig_connect_tcp(si);

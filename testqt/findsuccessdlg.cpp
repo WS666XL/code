@@ -1,4 +1,5 @@
 #include "findsuccessdlg.h"
+#include "Logger.h"
 #include "ui_findsuccessdlg.h"
 #include "global.h"
 #include"applyfriend.h"
@@ -26,7 +27,7 @@ FindSuccessDlg::FindSuccessDlg(QWidget *parent)
 
 FindSuccessDlg::~FindSuccessDlg()
 {
-    qDebug()<<"FindSuccessDlg destruct";
+    LLOG_DEBUG << "FindSuccessDlg destruct";
     delete ui;
 }
 

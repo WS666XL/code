@@ -1,4 +1,4 @@
-﻿// StatusServer.cpp : 此文件包含 "main" 函数。程序执行将在此处开始并结束。
+// StatusServer.cpp : 此文件包含 "main" 函数。程序执行将在此处开始并结束。
 //
 
 #include <iostream>
@@ -16,6 +16,7 @@
 #include <thread>
 #include <boost/asio.hpp>
 #include "StatusServiceImpl.h"
+#include "Logger.h"
 void RunServer() {
 	auto & cfg = ConfigMgr::Inst();
 	
@@ -29,7 +30,7 @@ void RunServer() {
 
 	// 构建并启动gRPC服务器
 	std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
-	std::cout << "Server listening on " << server_address << std::endl;
+	LLOG_INFO << "Server listening on " << server_address << std::endl;
 
 	// 创建Boost.Asio的io_context
 	boost::asio::io_context io_context;
@@ -39,7 +40,7 @@ void RunServer() {
 	// 设置异步等待SIGINT信号
 	signals.async_wait([&server, &io_context](const boost::system::error_code& error, int signal_number) {
 		if (!error) {
-			std::cout << "Shutting down server..." << std::endl;
+			LLOG_INFO << "Shutting down server..." << std::endl;
 			server->Shutdown(); // 优雅地关闭服务器
 			io_context.stop(); // 停止io_context
 		}
@@ -55,10 +56,13 @@ void RunServer() {
 
 int main(int argc, char** argv) {
 	try {
+		auto& cfg = ConfigMgr::Inst();
+		// 日志：控制台 + logs/statusserver.log
+		xulei::Logger::Init("statusserver", cfg["Log"]["Path"], cfg["Log"]["Level"]);
 		RunServer();
 	}
 	catch (std::exception const& e) {
-		std::cerr << "Error: " << e.what() << std::endl;
+		LLOG_ERROR << "Error: " << e.what() << std::endl;
 		return EXIT_FAILURE;
 	}
 

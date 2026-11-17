@@ -1,4 +1,5 @@
 #include "LogicSystem.h"
+#include "Logger.h"
 #include "FileSystem.h"
 #include "RedisMgr.h"
 #include "ConfigMgr.h"
@@ -74,10 +75,10 @@ void LogicWorker::PostTask(std::shared_ptr<LogicNode> task)
 //按消息 id 查回调表并执行；没注册的 id 直接丢弃并打日志
 void LogicWorker::task_callback(std::shared_ptr<LogicNode> task)
 {
-	cout << "recv_msg id  is " << task->_recvnode->_msg_id << endl;
+	LLOG_INFO << "recv_msg id  is " << task->_recvnode->_msg_id << endl;
 	auto call_back_iter = _fun_callbacks.find(task->_recvnode->_msg_id);
 	if (call_back_iter == _fun_callbacks.end()) {
-		std::cout << "msg id [" << task->_recvnode->_msg_id << "] handler not found" << std::endl;
+		LLOG_INFO << "msg id [" << task->_recvnode->_msg_id << "] handler not found" << std::endl;
 		return;
 	}
 	call_back_iter->second(task->_session, task->_recvnode->_msg_id,
@@ -93,7 +94,7 @@ void LogicWorker::RegisterCallBacks()
 			Json::Value root;
 			reader.parse(msg_data, root);
 			auto data = root["data"].asString();
-			std::cout << "recv test data is  " << data << std::endl;
+			LLOG_INFO << "recv test data is  " << data << std::endl;
 
 			Json::Value  rtvalue;
 			rtvalue["error"] = ErrorCodes::Success;
@@ -172,7 +173,7 @@ void LogicWorker::RegisterCallBacks()
 			std::hash<std::string> hash_fn;
 			size_t hash_value = hash_fn(name);
 			int index = hash_value % FILE_WORKER_COUNT;
-			std::cout << "Hash value: " << hash_value << std::endl;
+			LLOG_INFO << "Hash value: " << hash_value << std::endl;
 
 			auto task = std::make_shared<FileTask>(session, ID_UPLOAD_FILE_REQ, name, seq, total_size,
 				trans_size, last, file_data, 0);
@@ -251,7 +252,7 @@ void LogicWorker::RegisterCallBacks()
 			auto token = root["token"].asString();
 			auto last_seq = root["last_seq"].asInt();
 			// 临时调试：定位分块重组丢块问题（data 字段解码前的原始大小）
-			std::cout << "1031 parse: seq=" << seq << " data_len=" << file_data.size()
+			LLOG_INFO << "1031 parse: seq=" << seq << " data_len=" << file_data.size()
 				<< " total=" << total_size << " last=" << last << std::endl;
 
 			//callback 在 FileWorker 线程里被调用（落盘完成后）：
@@ -280,7 +281,7 @@ void LogicWorker::RegisterCallBacks()
 				bool success = RedisMgr::GetInstance()->Get(token_key, token_value);
 				if (!success) {
 					// 临时调试：打印校验失败原因（客户端 token 与 Redis 不一致时静默丢弃很难排查）
-					std::cout << "1031 token invalid: no token in redis, uid=" << uid_str << std::endl;
+					LLOG_INFO << "1031 token invalid: no token in redis, uid=" << uid_str << std::endl;
 					Json::Value rtvalue;
 					rtvalue["error"] = ErrorCodes::UidInvalid;
 					rtvalue["md5"] = md5;
@@ -294,7 +295,7 @@ void LogicWorker::RegisterCallBacks()
 
 				if (token_value != token) {
 					// 临时调试：打印双方 token 前缀（完整值不落日志）
-					std::cout << "1031 token mismatch: got [" << token.substr(0, 8)
+					LLOG_INFO << "1031 token mismatch: got [" << token.substr(0, 8)
 						<< "...] expect [" << token_value.substr(0, 8) << "...]" << std::endl;
 					Json::Value rtvalue;
 					rtvalue["error"] = ErrorCodes::TokenInvalid;
@@ -365,7 +366,7 @@ void LogicWorker::RegisterCallBacks()
 			size_t hash_value = hash_fn(name);
 			int index = hash_value % FILE_WORKER_COUNT;
 			// 临时调试：投递时打印 seq 与目标 worker，对照 worker 执行日志
-			std::cout << "1031 dispatch: seq=" << seq << " index=" << index
+			LLOG_INFO << "1031 dispatch: seq=" << seq << " index=" << index
 				<< " name=[" << name << "]" << std::endl;
 
 			auto task = std::make_shared<FileTask>(session, ID_UPLOAD_HEAD_ICON_REQ, name, seq,
@@ -438,7 +439,7 @@ void LogicWorker::RegisterCallBacks()
 			// 先做一次存在性检查，省得把注定失败的请求投进下载线程
 			std::ifstream infile(file_path_str, std::ios::binary);
 			if (!infile) {
-				std::cerr << "download file not exists: " << file_path_str << std::endl;
+				LLOG_ERROR << "download file not exists: " << file_path_str << std::endl;
 				send_error(ErrorCodes::FileNotExists);
 				return;
 			}

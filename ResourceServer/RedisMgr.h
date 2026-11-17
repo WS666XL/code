@@ -1,5 +1,6 @@
 #pragma once
 #include "const.h"
+#include "Logger.h"
 #include "data.h"
 #include "hiredis.h"
 #include <queue>
@@ -23,18 +24,20 @@ public:
 				if (context != nullptr) {
 					redisFree(context);
 				}
+				LLOG_ERROR << "Redis 连接失败 " << host << ":" << port
+					<< "，请检查 Redis 是否启动、端口/密码是否正确" << std::endl;
 				continue;
 			}
 
 			auto reply = (redisReply*)redisCommand(context, "AUTH %s", pwd);
 			if (reply->type == REDIS_REPLY_ERROR) {
-				std::cout << "认证失败" << std::endl;
+				LLOG_ERROR << "Redis 认证失败，请检查 config.ini 的 [Redis] Passwd" << std::endl;
 				freeReplyObject(reply);
 				continue;
 			}
 
 			freeReplyObject(reply);
-			std::cout << "认证成功" << std::endl;
+			LLOG_INFO << "认证成功" << std::endl;
 			connections_.push(context);
 		}
 
@@ -111,7 +114,7 @@ private:
 			try {
 				auto reply = (redisReply*)redisCommand(context, "PING");
 				if (!reply) {
-					std::cout << "reply is null, redis ping failed: " << std::endl;
+					LLOG_INFO << "reply is null, redis ping failed: " << std::endl;
 					connections_.push(context);
 					continue;
 				}
@@ -119,7 +122,7 @@ private:
 				connections_.push(context);
 			}
 			catch (std::exception& exp) {
-				std::cout << "Error keeping connection alive: " << exp.what() << std::endl;
+				LLOG_INFO << "Error keeping connection alive: " << exp.what() << std::endl;
 				redisFree(context);
 				context = redisConnect(host_, port_);
 				if (context == nullptr || context->err != 0) {
@@ -131,13 +134,13 @@ private:
 
 				auto reply = (redisReply*)redisCommand(context, "AUTH %s", pwd_);
 				if (reply->type == REDIS_REPLY_ERROR) {
-					std::cout << "认证失败" << std::endl;
+					LLOG_INFO << "认证失败" << std::endl;
 					freeReplyObject(reply);
 					continue;
 				}
 
 				freeReplyObject(reply);
-				std::cout << "认证成功" << std::endl;
+				LLOG_INFO << "认证成功" << std::endl;
 				connections_.push(context);
 			}
 		}

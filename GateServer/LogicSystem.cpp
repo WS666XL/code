@@ -1,5 +1,6 @@
 // LogicSystem.cpp —— 路由中心的函数实现
 #include "LogicSystem.h"
+#include "Logger.h"
 #include"HttpConnection.h"
 #include"VarifyGrpcClient.h"
 #include"RedisMgr.h"
@@ -44,7 +45,7 @@ LogicSystem::LogicSystem() {
     RegPost("/get_varifycode", [](std::shared_ptr<HttpConnection> connection) {
         // 把 HTTP 请求体整个读成字符串（前端发来的 JSON）
         auto body_str = boost::beast::buffers_to_string(connection->_request.body().data());
-        std::cout << "receive body is " << body_str << std::endl;
+        LLOG_INFO << "receive body is " << body_str << std::endl;
         connection->_response.set(http::field::content_type, "text/json");   // 告知浏览器本次回的是 JSON
         //设置响应的内容类型；这里建议改为 "application/json"
         Json::Value root;         // 待返回的 JSON
@@ -52,7 +53,7 @@ LogicSystem::LogicSystem() {
         Json::Value src_root;     // 解析结果
         bool parse_success = reader.parse(body_str, src_root);
         if (!parse_success) {
-            std::cout << "Failed to parse JSON data!" << std::endl;
+            LLOG_INFO << "Failed to parse JSON data!" << std::endl;
             root["error"] = ErrorCodes::Error_Json;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -61,7 +62,7 @@ LogicSystem::LogicSystem() {
         
 
         if (!src_root.isMember("email")) {          // 字段缺失（isMember 判存在，不能写成 src_root["email"] 直接判）
-            std::cout << "Missing 'email' field in JSON data!" << std::endl;
+            LLOG_INFO << "Missing 'email' field in JSON data!" << std::endl;
             root["error"] = ErrorCodes::Error_Json;    // 1001
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -72,7 +73,7 @@ LogicSystem::LogicSystem() {
         // GetInstance() 拿全局唯一客户端，GetVarifyCode() 阻塞等 VarifyServer 返回
         // 调用链：GetVarifyCode → 填 GetVarifyReq → Channel 发 HTTP/2 → 服务端处理 → 反序列化进 GetVarifyRsp
         GetVarifyRsp rsp = VerifyGrpcClient::GetInstance()->GetVarifyCode(email);
-        std::cout << "email is " << email << std::endl;
+        LLOG_INFO << "email is " << email << std::endl;
         root["error"] = rsp.error();   // 0 = 成功（rsp.error 目前未回填，后续可改成 root["error"] = rsp.error）
         root["email"] = src_root["email"];
         std::string jsonstr = root.toStyledString();
@@ -82,14 +83,14 @@ LogicSystem::LogicSystem() {
 
     RegPost("/user_register", [](std::shared_ptr<HttpConnection> connection) {
         auto body_str = boost::beast::buffers_to_string(connection->_request.body().data());
-        std::cout << "receive body is " << body_str << std::endl;
+        LLOG_INFO << "receive body is " << body_str << std::endl;
         connection->_response.set(http::field::content_type, "text/json");
         Json::Value root;
         Json::Reader reader;
         Json::Value src_root;
         bool parse_success = reader.parse(body_str, src_root);
         if (!parse_success) {
-            std::cout << "Failed to parse JSON data!" << std::endl;
+            LLOG_INFO << "Failed to parse JSON data!" << std::endl;
             root["error"] = ErrorCodes::Error_Json;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -101,7 +102,7 @@ LogicSystem::LogicSystem() {
         auto confirm = src_root["confirm"].asString();
 
         if (!src_root.isMember("email")) {
-            std::cout << "Failed to parse JSON data!" << std::endl;
+            LLOG_INFO << "Failed to parse JSON data!" << std::endl;
             root["error"] = ErrorCodes::Error_Json;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -117,7 +118,7 @@ LogicSystem::LogicSystem() {
         auto icon = src_root["icon"].asString();
 
         if (pwd != confirm) {
-            std::cout << "password err " << std::endl;
+            LLOG_INFO << "password err " << std::endl;
             root["error"] = ErrorCodes::PasswdErr;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -128,7 +129,7 @@ LogicSystem::LogicSystem() {
         std::string  varify_code;
         bool b_get_varify = RedisMgr::GetInstance()->Get(CODEPREFIX+src_root["email"].asString(), varify_code);
         if (!b_get_varify) {
-            std::cout << " get varify code expired" << std::endl;
+            LLOG_INFO << " get varify code expired" << std::endl;
             root["error"] = ErrorCodes::VarifyExpired;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -136,7 +137,7 @@ LogicSystem::LogicSystem() {
         }
 
         if (varify_code != src_root["varifycode"].asString()) {
-            std::cout << " varify code error" << std::endl;
+            LLOG_INFO << " varify code error" << std::endl;
             root["error"] = ErrorCodes::VarifyCodeErr;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -146,7 +147,7 @@ LogicSystem::LogicSystem() {
         //访问redis查找
         bool b_usr_exist = RedisMgr::GetInstance()->ExistsKey(src_root["user"].asString());
         if (b_usr_exist) {
-            std::cout << " user exist" << std::endl;
+            LLOG_INFO << " user exist" << std::endl;
             root["error"] = ErrorCodes::UserExist;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -160,7 +161,7 @@ LogicSystem::LogicSystem() {
         //int uid = MysqlMgr::GetInstance()->RegUser(name, email, pwd);
         int uid = MysqlMgr::GetInstance()->RegUser(name, email, pwd, icon);
         if (uid == 0 || uid == -1) {
-            std::cout << " user or email exist" << std::endl;
+            LLOG_INFO << " user or email exist" << std::endl;
             root["error"] = ErrorCodes::UserExist;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -189,14 +190,14 @@ LogicSystem::LogicSystem() {
     //重置回调逻辑
     RegPost("/reset_pwd", [](std::shared_ptr<HttpConnection> connection) {
         auto body_str = boost::beast::buffers_to_string(connection->_request.body().data());
-        std::cout << "receive body is " << body_str << std::endl;
+        LLOG_INFO << "receive body is " << body_str << std::endl;
         connection->_response.set(http::field::content_type, "text/json");
         Json::Value root;
         Json::Reader reader;
         Json::Value src_root;
         bool parse_success = reader.parse(body_str, src_root);
         if (!parse_success) {
-            std::cout << "Failed to parse JSON data!" << std::endl;
+            LLOG_INFO << "Failed to parse JSON data!" << std::endl;
             root["error"] = ErrorCodes::Error_Json;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -212,7 +213,7 @@ LogicSystem::LogicSystem() {
         std::string  varify_code;
         bool b_get_varify = RedisMgr::GetInstance()->Get(CODEPREFIX + src_root["email"].asString(), varify_code);
         if (!b_get_varify) {
-            std::cout << " get varify code expired" << std::endl;
+            LLOG_INFO << " get varify code expired" << std::endl;
             root["error"] = ErrorCodes::VarifyExpired;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -220,7 +221,7 @@ LogicSystem::LogicSystem() {
         }
 
         if (varify_code != src_root["varifycode"].asString()) {
-            std::cout << " varify code error" << std::endl;
+            LLOG_INFO << " varify code error" << std::endl;
             root["error"] = ErrorCodes::VarifyCodeErr;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -229,7 +230,7 @@ LogicSystem::LogicSystem() {
         //查询数据库判断用户名和邮箱是否匹配
         bool email_valid = MysqlMgr::GetInstance()->CheckEmail(name, email);
         if (!email_valid) {
-            std::cout << " user email not match" << std::endl;
+            LLOG_INFO << " user email not match" << std::endl;
             root["error"] = ErrorCodes::EmailNotMatch;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -239,14 +240,14 @@ LogicSystem::LogicSystem() {
         //更新密码为最新密码
         bool b_up = MysqlMgr::GetInstance()->UpdatePwd(name, pwd);
         if (!b_up) {
-            std::cout << " update pwd failed" << std::endl;
+            LLOG_INFO << " update pwd failed" << std::endl;
             root["error"] = ErrorCodes::PasswdUpFailed;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
             return true;
         }
 
-        std::cout << "succeed to update password" << pwd << std::endl;
+        LLOG_INFO << "succeed to update password" << pwd << std::endl;
         root["error"] = 0;
         root["email"] = email;
         root["user"] = name;
@@ -260,14 +261,14 @@ LogicSystem::LogicSystem() {
     //用户登录逻辑
     RegPost("/user_login", [](std::shared_ptr<HttpConnection> connection) {
         auto body_str = boost::beast::buffers_to_string(connection->_request.body().data());
-        std::cout << "receive body is " << body_str << std::endl;
+        LLOG_INFO << "receive body is " << body_str << std::endl;
         connection->_response.set(http::field::content_type, "text/json");
         Json::Value root;
         Json::Reader reader;
         Json::Value src_root;
         bool parse_success = reader.parse(body_str, src_root);
         if (!parse_success) {
-            std::cout << "Failed to parse JSON data!" << std::endl;
+            LLOG_INFO << "Failed to parse JSON data!" << std::endl;
             root["error"] = ErrorCodes::Error_Json;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -281,7 +282,7 @@ LogicSystem::LogicSystem() {
         //查询数据库判断用户名和密码是否匹配
         bool pwd_valid = MysqlMgr::GetInstance()->CheckPwd(email, pwd, userInfo);
         if (!pwd_valid) {
-            std::cout << " user pwd not match" << std::endl;
+            LLOG_INFO << " user pwd not match" << std::endl;
             root["error"] = ErrorCodes::PasswdInvalid;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
@@ -291,14 +292,14 @@ LogicSystem::LogicSystem() {
         //查询StatusServer找到合适的连接
         auto reply = StatusGrpcClient::GetInstance()->GetChatServer(userInfo.uid);
         if (reply.error()) {
-            std::cout << " grpc get chat server failed, error is " << reply.error() << std::endl;
+            LLOG_INFO << " grpc get chat server failed, error is " << reply.error() << std::endl;
             root["error"] = ErrorCodes::RPCFailed;
             std::string jsonstr = root.toStyledString();
             beast::ostream(connection->_response.body()) << jsonstr;
             return true;
         }
 
-        std::cout << "succeed to load userinfo uid is " << userInfo.uid << std::endl;
+        LLOG_INFO << "succeed to load userinfo uid is " << userInfo.uid << std::endl;
         root["error"] = 0;
         root["email"] = email;
         root["uid"] = userInfo.uid;
@@ -323,7 +324,7 @@ LogicSystem::LogicSystem() {
 
     RegGet("/hello", [](std::shared_ptr<HttpConnection> connection) {
         // 服务端控制台打印
-        std::cout << "您好，Spring Boot！202412040110许磊" << std::endl;
+        LLOG_INFO << "您好，Spring Boot！202412040110许磊" << std::endl;
 
         // 设置响应类型
         connection->_response.set(http::field::content_type, "text/plain");
@@ -335,7 +336,7 @@ LogicSystem::LogicSystem() {
         });
     RegGet("/ch2_3_war_exploded", [](std::shared_ptr<HttpConnection> connection) {
         // 服务端控制台打印
-        std::cout << "202412040110许磊" << std::endl;
+        LLOG_INFO << "202412040110许磊" << std::endl;
 
         // 设置响应类型
         connection->_response.set(http::field::content_type, "text/plain");

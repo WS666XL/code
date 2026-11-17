@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include "Logger.h"
 #include "const.h"
 #include <iostream>
 #include <boost/asio.hpp>
@@ -15,7 +16,7 @@ public:
 	}
 
 	~MsgNode() {
-		std::cout << "destruct MsgNode" << endl;
+		LLOG_INFO << "destruct MsgNode" << endl;
 		delete[] _data;
 	}
 

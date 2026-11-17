@@ -13,7 +13,7 @@ using message::LoginReq;
 using message::LoginRsp;
 using message::StatusService;
 
-// ÁÄÌì·şÎñÆ÷µÄĞÅÏ¢
+// èŠå¤©æœåŠ¡å™¨çš„ä¿¡æ¯
 class  ChatServer {
 public:
     ChatServer() :host(""), port(""), name(""), con_count(0) {}
@@ -34,32 +34,32 @@ public:
     std::string name;
     int con_count;
 };
-// ×´Ì¬·şÎñÆ÷µÄ gRPC ·şÎñÊµÏÖÀà
+// çŠ¶æ€æœåŠ¡å™¨çš„ gRPC æœåŠ¡å®ç°ç±»
 class StatusServiceImpl final : public StatusService::Service
 {
 public:
     StatusServiceImpl();
 
-    // ´¦Àí»ñÈ¡ÁÄÌì·şÎñÆ÷µÄÇëÇó£¬·µ»Ø·şÎñÆ÷µØÖ·µÈĞÅÏ¢
+    // å¤„ç†è·å–èŠå¤©æœåŠ¡å™¨çš„è¯·æ±‚ï¼Œè¿”å›æœåŠ¡å™¨åœ°å€ç­‰ä¿¡æ¯
     Status GetChatServer(ServerContext* context, const GetChatServerReq* request,
         GetChatServerRsp* reply) override;
 
-    // ´¦ÀíÓÃ»§µÇÂ¼ÇëÇó£¬ÑéÖ¤µÇÂ¼×´Ì¬²¢·µ»Ø½á¹û
+    // å¤„ç†ç”¨æˆ·ç™»å½•è¯·æ±‚ï¼ŒéªŒè¯ç™»å½•çŠ¶æ€å¹¶è¿”å›ç»“æœ
     Status Login(ServerContext* context, const LoginReq* request,
         LoginRsp* reply) override;
 
 private:
-    // ±£´æÓÃ»§ ID ºÍ¶ÔÓ¦µÄ token
+    // ä¿å­˜ç”¨æˆ· ID å’Œå¯¹åº”çš„ token
     void insertToken(int uid, std::string token);
 
-    // »ñÈ¡Ò»¸öºÏÊÊµÄÁÄÌì·şÎñÆ÷
+    // è·å–ä¸€ä¸ªåˆé€‚çš„èŠå¤©æœåŠ¡å™¨
     ChatServer getChatServer();
 
-    // ±£´æÁÄÌì·şÎñÆ÷ĞÅÏ¢£¬key Îª·şÎñÆ÷±êÊ¶
+    // ä¿å­˜èŠå¤©æœåŠ¡å™¨ä¿¡æ¯ï¼Œkey ä¸ºæœåŠ¡å™¨æ ‡è¯†
     std::unordered_map<std::string, ChatServer> _servers;
-    std::mutex _server_mtx;  // ±£»¤ÁÄÌì·şÎñÆ÷ĞÅÏ¢µÄ»¥³âËø
+    std::mutex _server_mtx;  // ä¿æŠ¤èŠå¤©æœåŠ¡å™¨ä¿¡æ¯çš„äº’æ–¥é”
 
-    // ±£´æÓÃ»§ ID ºÍ¶ÔÓ¦µÄ token£¬key ÎªÓÃ»§ ID
+    // ä¿å­˜ç”¨æˆ· ID å’Œå¯¹åº”çš„ tokenï¼Œkey ä¸ºç”¨æˆ· ID
    // std::unordered_map<int, std::string> _tokens;
-    //std::mutex _token_mtx;  // ±£»¤ token ĞÅÏ¢µÄ»¥³âËø
+    //std::mutex _token_mtx;  // ä¿æŠ¤ token ä¿¡æ¯çš„äº’æ–¥é”
 };

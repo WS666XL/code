@@ -1,4 +1,5 @@
 #include "findfaildlg.h"
+#include "Logger.h"
 #include "ui_findfaildlg.h"
 #include<QDebug>
 FindFailDlg::FindFailDlg(QWidget *parent) :
@@ -18,7 +19,7 @@ FindFailDlg::FindFailDlg(QWidget *parent) :
 
 FindFailDlg::~FindFailDlg()
 {
-    qDebug()<< "Find FailDlg destruct";
+    LLOG_DEBUG << "Find FailDlg destruct";
     delete ui;
 }
 
