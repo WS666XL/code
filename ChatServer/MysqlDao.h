@@ -200,6 +200,8 @@ public:
 	bool UpdateFriendRemark(int selfId, int friendId, const std::string& remark);
 	// 删除好友：只删自己这一侧的 friend 行（对方好友列表不受影响）
 	bool DeleteFriendOneSide(int selfId, int friendId);
+	// 幂等建立好友关系（AI 助手固定好友用）
+	bool EnsureFriend(int selfId, int friendId);
 private:
 	std::unique_ptr<MySqlPool> pool_;
 };

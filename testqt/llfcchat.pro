@@ -22,6 +22,7 @@ DESTDIR = ./bin
 
 # 参与编译的 .cpp 源文件
 SOURCES += \
+    aiclient.cpp \
     adduseritem.cpp \
     applyfriend.cpp \
     applyfrienditem.cpp \
@@ -72,6 +73,7 @@ SOURCES += \
 
 # 参与编译的 .h 头文件
 HEADERS += \
+    aiclient.h \
     adduseritem.h \
     applyfriend.h \
     applyfrienditem.h \

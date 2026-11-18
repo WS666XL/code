@@ -13,6 +13,7 @@
 #include"picturebubble.h"
 #include"filebubble.h"
 #include"filetcpmgr.h"
+#include"aiclient.h"
 #include"usermgr.h"
 #include"tcpmgr.h"
 #include<QJsonDocument>
@@ -85,6 +86,25 @@ ChatPage::ChatPage(QWidget *parent)
     ui->horizontalLayout_6->addStretch();
     ui->horizontalLayout_6->addWidget(_more_btn, 0, Qt::AlignRight);
     connect(_more_btn, &QToolButton::clicked, this, &ChatPage::ShowFriendMenu);
+
+    // ===== AI 助手：客户端直连百炼，回复只进本地会话缓存（不落库） =====
+    connect(AiClient::GetInstance(), &AiClient::sig_reply, this,
+        [this](const QString& text) {
+            const int thread_id = _ai_pending_thread_id;
+            _ai_pending_thread_id = 0;
+            if (thread_id > 0) {
+                AppendLocalTextMessage(thread_id, false, text);
+            }
+        });
+    connect(AiClient::GetInstance(), &AiClient::sig_error, this,
+        [this](const QString& message) {
+            const int thread_id = _ai_pending_thread_id;
+            _ai_pending_thread_id = 0;
+            if (thread_id > 0) {
+                AppendLocalTextMessage(thread_id, false,
+                    QStringLiteral("【AI 回复失败】%1").arg(message));
+            }
+        });
 
     //下载完成：执行该文件名对应的刷新回调（图片气泡换真图 / 文件卡片切"点击打开"）
     connect(FileTcpMgr::GetInstance().get(), &FileTcpMgr::sig_file_downloaded,
@@ -248,6 +268,17 @@ void ChatPage::ShowFriendMenu()
     }
 
     const int friend_uid = _chat_data->GetOtherId();
+
+    // AI 助手：只提供 API Key 设置，不提供备注/删除好友
+    if (friend_uid == AI_BOT_UID) {
+        QMenu menu(this);
+        QAction* key_action = menu.addAction(QStringLiteral("设置 AI API Key"));
+        if (menu.exec(QCursor::pos()) == key_action) {
+            ShowAiKeyDialog();
+        }
+        return;
+    }
+
     auto friend_info = UserMgr::GetInstance()->GetFriendById(friend_uid);
     const QString display_name = friend_info ? friend_info->DisplayName()
                                              : QString::number(friend_uid);
@@ -280,10 +311,97 @@ void ChatPage::ShowFriendMenu()
     }
 }
 
+// 设置百炼 API Key：只写本机 AppData，不上传服务端
+void ChatPage::ShowAiKeyDialog()
+{
+    bool ok = false;
+    const QString key = QInputDialog::getText(
+        this, QStringLiteral("设置百炼 API Key"),
+        QStringLiteral("API Key（只保存在本机，不会上传）："),
+        QLineEdit::Password, QString(), &ok);
+    if (!ok) {
+        return;
+    }
+    AiClient::GetInstance()->SetApiKey(key.trimmed());
+}
+
+// AI 好友发送：只取文本，不落库；回复通过 AiClient 信号回到 AppendLocalTextMessage
+void ChatPage::sendAiChatMsg()
+{
+    if (!_chat_data) {
+        return;
+    }
+    if (_ai_pending_thread_id > 0) {
+        QMessageBox::information(this, QStringLiteral("提示"),
+            QStringLiteral("AI 正在回复上一条，请稍候"));
+        return;
+    }
+    if (!AiClient::GetInstance()->HasApiKey()) {
+        ShowAiKeyDialog();
+        if (!AiClient::GetInstance()->HasApiKey()) {
+            return;
+        }
+    }
+
+    QVector<MsgInfo> msg_list = ui->chatEdit->getMsgList();
+    QStringList texts;
+    bool has_attachment = false;
+    for (const auto& msg : msg_list) {
+        if (msg.msgFlag == "text") {
+            texts << msg.content;
+        }
+        else {
+            has_attachment = true;
+        }
+    }
+    if (texts.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("提示"),
+            has_attachment ? QStringLiteral("AI 助手目前只支持文本消息")
+                           : QStringLiteral("请输入内容"));
+        return;
+    }
+
+    const int thread_id = _chat_data->GetThreadId();
+    const QString prompt = texts.join("\n");
+    _ai_pending_thread_id = thread_id;
+    AppendLocalTextMessage(thread_id, true, prompt);
+    AiClient::GetInstance()->Ask(prompt);
+}
+
+// AI 会话的本地消息：只进当前会话缓存和气泡，不入库
+void ChatPage::AppendLocalTextMessage(int thread_id, bool self, const QString& text)
+{
+    auto thread_data = UserMgr::GetInstance()->GetChatThreadByThreadId(thread_id);
+    auto self_info = UserMgr::GetInstance()->GetUserInfo();
+    if (!thread_data || !self_info) {
+        return;
+    }
+
+    --_local_msg_id;   // 负数自增，避免和数据库 message_id 冲突
+    const int send_uid = self ? self_info->_uid : AI_BOT_UID;
+    const QString now = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
+    auto msg = std::make_shared<TextChatData>(_local_msg_id, thread_id,
+        ChatFormType::PRIVATE, ChatMsgType::TEXT, text, send_uid,
+        MsgStatus::READED, now);
+    thread_data->AddMsg(msg);
+
+    if (_chat_data && _chat_data->GetThreadId() == thread_id) {
+        AppendChatMsg(msg);
+    }
+    // 左侧会话条目的最后一条内容/时间也跟着刷新
+    emit sig_local_chat_msg(thread_id);
+}
+
 // 右键气泡：弹"删除"菜单。气泡本身不知道消息 id，
 // 所以创建气泡时把对应的 ChatDataBase 捕获进 lambda
 void ChatPage::AttachDeleteMenu(QWidget* bubble, std::shared_ptr<ChatDataBase> msg)
 {
+    // AI 会话的消息只存在本地，没有服务端 message_id，不挂删除（避免发 1061）
+    if (_chat_data && !_chat_data->IsGroup()
+        && _chat_data->GetOtherId() == AI_BOT_UID) {
+        return;
+    }
+
     auto* frame = qobject_cast<BubbleFrame*>(bubble);
     if (!frame || !msg) {
         return;
@@ -949,6 +1067,12 @@ void ChatPage::on_send_btn_clicked()
 {
     if (_chat_data == nullptr) {
         LLOG_DEBUG << "friend_info is empty";
+        return;
+    }
+
+    // AI 好友：消息不经过 ChatServer，客户端直连百炼
+    if (!_chat_data->IsGroup() && _chat_data->GetOtherId() == AI_BOT_UID) {
+        sendAiChatMsg();
         return;
     }
 

@@ -155,6 +155,10 @@ CREATE TABLE `file_object` (
 -- 第一个注册用户 uid = 1001
 INSERT IGNORE INTO `user_id` (`id`) VALUES (1000);
 
+-- AI 助手固定用户：客户端直连百炼大模型，不可删除好友
+INSERT IGNORE INTO `user` (`uid`, `name`, `email`, `pwd`, `nick`, `desc`, `sex`, `icon`)
+VALUES (900000, 'AI助手', 'ai@localhost', '', 'AI助手', '百炼大模型助手', 0, ':/res/head_1.jpg');
+
 DROP PROCEDURE IF EXISTS `reg_user`;
 delimiter ;;
 CREATE PROCEDURE `reg_user`(IN `new_name` VARCHAR(255),

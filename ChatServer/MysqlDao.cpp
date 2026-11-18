@@ -969,6 +969,34 @@ bool MysqlDao::DeleteFriendOneSide(int self_id, int friend_id)
 	}
 }
 
+// 幂等建立好友关系：AI 助手固定好友，重复登录/重复执行不报错
+bool MysqlDao::EnsureFriend(int selfId, int friendId)
+{
+	if (selfId <= 0 || friendId <= 0 || selfId == friendId) {
+		return false;
+	}
+	auto con = pool_->getConnection();
+	if (!con) {
+		return false;
+	}
+	Defer defer([this, &con]() {
+		pool_->returnConnection(std::move(con));
+		});
+
+	try {
+		std::unique_ptr<sql::PreparedStatement> pstmt(con->_con->prepareStatement(
+			"INSERT IGNORE INTO friend(self_id, friend_id, back) VALUES (?, ?, '')"));
+		pstmt->setInt(1, selfId);
+		pstmt->setInt(2, friendId);
+		pstmt->executeUpdate();
+		return true;
+	}
+	catch (sql::SQLException& e) {
+		LLOG_ERROR << "SQLException in EnsureFriend: " << e.what() << std::endl;
+		return false;
+	}
+}
+
 // 批量插入聊天消息，插入后用 LAST_INSERT_ID() 回填自增 message_id（事务保证原子性）
 bool MysqlDao::AddChatMsg(std::vector<std::shared_ptr<ChatMessage>>& chat_datas) {
 	auto con = pool_->getConnection();

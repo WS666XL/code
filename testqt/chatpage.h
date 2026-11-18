@@ -30,6 +30,8 @@ class ChatPage : public QWidget
 signals:
     //删除了一条消息：通知 ChatDialog 刷新左侧会话条目的最后消息/时间
     void sig_chat_msg_deleted(int thread_id);
+    //AI 会话里新增了本地消息（不入库）：通知 ChatDialog 刷新左侧会话条目
+    void sig_local_chat_msg(int thread_id);
 
 public:
     explicit ChatPage(QWidget *parent = nullptr);
@@ -75,6 +77,10 @@ private:
     void AttachDeleteMenu(QWidget* bubble, std::shared_ptr<ChatDataBase> msg);
     //删除单条消息：先从页面/本地缓存移除，再发 1061 落服务端删除标记
     void DeleteChatMsg(std::shared_ptr<ChatDataBase> msg);
+    //AI 好友：客户端直连百炼，消息只放本地缓存，不落库
+    void sendAiChatMsg();
+    void AppendLocalTextMessage(int thread_id, bool self, const QString& text);
+    void ShowAiKeyDialog();
     Ui::ChatPage *ui;      // 界面对象
     std::shared_ptr<ChatThreadData> _chat_data;  // 当前会话
     //管理未回复（还没收到回执）的消息气泡：key 是本地 unique_id
@@ -99,6 +105,10 @@ private:
     QDate _last_sep_date;
     //标题右侧"..."按钮（私聊显示，群聊隐藏）
     QToolButton* _more_btn = nullptr;
+    //AI 会话的本地消息 id：用负数自增，避免和数据库 message_id 冲突
+    int _local_msg_id = 0;
+    //正在等待 AI 回复的会话 id（0 表示空闲）
+    int _ai_pending_thread_id = 0;
 };
 
 #endif // CHATPAGE_H

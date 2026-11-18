@@ -16,6 +16,9 @@
 // 必须 unpolish(取消)+polish(重新应用) 一次，控件才会按新属性重绘。
 extern std::function<void(QWidget*)>repolish;
 extern std::function<QString(QString)>xorString;
+
+// AI 助手固定 uid（服务端 ChatServer/const.h 有同名常量，两端必须一致）
+constexpr int AI_BOT_UID = 900000;
 // 头像统一加载入口（原图解码+缩放双层缓存，见 global.cpp）。
 // icon 支持三种形态，按优先级解析：
 //   1. ":/res/head_X.jpg" —— 随包默认头像资源路径

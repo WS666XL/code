@@ -248,6 +248,9 @@ void LogicSystem::LoginHandler(shared_ptr<CSession> session, const short &msg_id
 	}
 
 	//获取好友列表
+	// 每个用户都固定拥有 AI 助手好友（幂等，重复登录不会重复插入）
+	MysqlMgr::GetInstance()->EnsureFriend(uid, AI_BOT_UID);
+
 	std::vector<std::shared_ptr<UserInfo>> friend_list;
 	bool b_friend_list = GetFriendList(uid, friend_list);
 	for (auto& friend_ele : friend_list) {
@@ -1115,6 +1118,12 @@ void LogicSystem::DeleteFriend(std::shared_ptr<CSession> session,
 
 	if (uid <= 0 || friend_uid <= 0 || friend_uid == uid) {
 		rtvalue["error"] = ErrorCodes::Error_Json;
+		return;
+	}
+
+	// AI 助手是固定好友，不允许删除
+	if (friend_uid == AI_BOT_UID) {
+		rtvalue["error"] = ErrorCodes::DELETE_FRIEND_FAILED;
 		return;
 	}
 

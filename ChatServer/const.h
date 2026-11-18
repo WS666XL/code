@@ -1,6 +1,8 @@
 #pragma once
 #include <functional>
 
+// AI 好友固定 uid（客户端 global.h 有同名常量，两端必须一致）
+constexpr int AI_BOT_UID = 900000;
 
 enum ErrorCodes {
 	Success = 0,

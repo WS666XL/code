@@ -195,6 +195,15 @@ ChatDialog::ChatDialog(QWidget *parent)
                 }
             });
 
+    //AI 会话新增本地消息：刷新左侧会话条目（AI 回复也会更新最后一条）
+    connect(ui->chat_page, &ChatPage::sig_local_chat_msg, this,
+            [this](int thread_id) {
+                auto data = UserMgr::GetInstance()->GetChatThreadByThreadId(thread_id);
+                if (data) {
+                    RefreshChatListItem(thread_id, data);
+                }
+            });
+
     //1062 删除回包：失败时提示（服务端没记上，重新登录后消息会回来）
     connect(TcpMgr::GetInstance().get(), &TcpMgr::sig_delete_chat_msg_rsp,
             this, [this](int error, int /*message_id*/) {

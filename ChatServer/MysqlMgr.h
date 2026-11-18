@@ -49,6 +49,9 @@ public:
 	bool DeleteFriendOneSide(int selfId, int friendId) {
 		return _dao.DeleteFriendOneSide(selfId, friendId);
 	}
+	bool EnsureFriend(int selfId, int friendId) {
+		return _dao.EnsureFriend(selfId, friendId);
+	}
 private:
 	MysqlMgr();
 	MysqlDao  _dao;
