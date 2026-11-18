@@ -3,8 +3,33 @@
 #include <iostream>
 #include "AsioIOServicePool.h"
 CServer::CServer(boost::asio::io_context& io_context, short port):_io_context(io_context), _port(port),
-_acceptor(io_context, tcp::endpoint(tcp::v4(),port))
+_acceptor(io_context)
 {
+	// 先 open + reuse_address 再 bind：避免快速重启时端口没释放导致 bind 失败
+	boost::system::error_code ec;
+	_acceptor.open(tcp::v4(), ec);
+	if (ec) {
+		LLOG_ERROR << "Server open failed, port " << _port
+			<< " err=" << ec.message() << endl;
+		throw boost::system::system_error(ec);
+	}
+	_acceptor.set_option(tcp::acceptor::reuse_address(true), ec);
+	if (ec) {
+		LLOG_ERROR << "Server set reuse_address failed, port " << _port
+			<< " err=" << ec.message() << endl;
+	}
+	_acceptor.bind(tcp::endpoint(tcp::v4(), port), ec);
+	if (ec) {
+		LLOG_ERROR << "Server bind failed, port " << _port
+			<< " err=" << ec.message() << endl;
+		throw boost::system::system_error(ec);
+	}
+	_acceptor.listen(boost::asio::socket_base::max_listen_connections, ec);
+	if (ec) {
+		LLOG_ERROR << "Server listen failed, port " << _port
+			<< " err=" << ec.message() << endl;
+		throw boost::system::system_error(ec);
+	}
 	LLOG_INFO << "Server start success, listen on port : " << _port << endl;
 	StartAccept();
 }

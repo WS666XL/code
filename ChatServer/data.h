@@ -53,6 +53,7 @@ struct ChatMessage {
 	std::string chat_time;  //消息时间字符串
 	int status;             //0=未读 1=已读 2=撤回
 	int msg_type;           //对应 ChatMsgType
+	int64_t file_size = 0;  //图片/文件消息的字节数（历史记录显示文件卡片大小用）
 };
 
 //分页查询结果：多取一条用于判断是否还有下一页

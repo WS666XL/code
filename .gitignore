@@ -17,6 +17,13 @@ Makefile
 *.log
 logs/
 
+# IDE 编译数据库（由 gen_compdb.sh 自动生成，路径与本机相关）
+compile_commands.json
+# clangd 索引缓存
+.cache/
+# Redis 运行数据
+dump.rdb
+
 # 老师参考代码（独立仓库，不纳入本项目）
 llfcchat/
 

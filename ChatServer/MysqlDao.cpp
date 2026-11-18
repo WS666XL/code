@@ -800,7 +800,7 @@ std::shared_ptr<PageResult> MysqlDao::LoadChatMsg(int thread_id, int last_messag
 		// 对方的历史记录/未读状态不受影响（类似微信"删除"而不是"撤回"）
 		const std::string sql = R"(
         SELECT cm.message_id, cm.thread_id, cm.sender_id, cm.recv_id, cm.content,
-               cm.created_at, cm.updated_at, cm.status, cm.msg_type
+               cm.created_at, cm.updated_at, cm.status, cm.msg_type, cm.file_size
         FROM chat_message cm
         WHERE cm.thread_id = ?
           AND cm.message_id > ?
@@ -833,6 +833,7 @@ std::shared_ptr<PageResult> MysqlDao::LoadChatMsg(int thread_id, int last_messag
 			msg.chat_time = rs->getString("created_at");
 			msg.status = rs->getInt("status");
 			msg.msg_type = rs->getInt("msg_type");
+			msg.file_size = rs->getInt64("file_size");
 			page_res->messages.push_back(std::move(msg));
 		}
 		if (page_res->messages.size() > page_size) {
@@ -985,8 +986,8 @@ bool MysqlDao::AddChatMsg(std::vector<std::shared_ptr<ChatMessage>>& chat_datas)
 		auto pstmt = std::unique_ptr<sql::PreparedStatement>(
 			conn->prepareStatement(
 				"INSERT INTO chat_message "
-				"(thread_id, sender_id, recv_id, content, created_at, updated_at, status, msg_type) "
-				"VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+				"(thread_id, sender_id, recv_id, content, created_at, updated_at, status, msg_type, file_size) "
+				"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
 			)
 		);
 
@@ -999,6 +1000,7 @@ bool MysqlDao::AddChatMsg(std::vector<std::shared_ptr<ChatMessage>>& chat_datas)
 			pstmt->setString(6, msg->chat_time);  // updated_at
 			pstmt->setInt(7, msg->status);
 			pstmt->setInt(8, msg->msg_type);
+			pstmt->setInt64(9, msg->file_size);
 			pstmt->executeUpdate();
 
 			// 取回自增主键，回填给调用方（回执要用）

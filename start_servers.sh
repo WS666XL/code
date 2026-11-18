@@ -24,7 +24,16 @@ fi
 for n in GateServer StatusServer ChatServer ChatServer2 ResourceServer; do
     pkill -x "$n" 2>/dev/null && echo "stopped old $n"
 done
-sleep 1
+# pkill 只是发信号，旧进程可能还在优雅关闭并占着端口；
+# 等它们真正退出再启动，避免新进程 bind 失败（ChatServer 会直接崩）
+for i in $(seq 1 50); do
+    alive=0
+    for n in GateServer StatusServer ChatServer ChatServer2 ResourceServer; do
+        pgrep -x "$n" > /dev/null 2>&1 && alive=1
+    done
+    [ "$alive" -eq 0 ] && break
+    sleep 0.1
+done
 
 start_one GateServer   GateServer   /tmp/gateserver.log
 start_one StatusServer StatusServer /tmp/statusserver.log
@@ -35,5 +44,14 @@ start_one ResourceServer ResourceServer /tmp/resourceserver.log
 sleep 1
 echo "---- 端口检查 ----"
 for port in 8080 50052 8090 50055 8091 50056 9090; do
-    (echo > /dev/tcp/127.0.0.1/$port) 2>/dev/null && echo "port $port: OK" || echo "port $port: FAIL"
+    ok=0
+    # 服务启动有先后，最多等 2 秒再判定失败，避免误报
+    for i in $(seq 1 20); do
+        if (echo > /dev/tcp/127.0.0.1/$port) 2>/dev/null; then
+            ok=1
+            break
+        fi
+        sleep 0.1
+    done
+    [ "$ok" -eq 1 ] && echo "port $port: OK" || echo "port $port: FAIL"
 done

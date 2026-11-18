@@ -99,4 +99,8 @@ struct FileTask {
 	// ===== 仅 1037 图片聊天上传使用 =====
 	int _chat_msg_id = 0; //对应 chat_message 表的 message_id（文件传完后置状态 + 推通知）
 	int _receiver = 0;    //收图人 uid（传完后查它所在节点推 gRPC 通知）
+
+	// ===== 秒传：md5 命中服务器已有文件时使用 =====
+	bool _instant = false;              //true=不接收分块，直接硬链接已有文件
+	std::string _instant_source;        //已有文件的绝对路径
 };

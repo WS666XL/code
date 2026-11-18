@@ -42,15 +42,23 @@ signals:
     void sig_card_clicked();   //卡片被点击：外部决定是发起下载还是打开文件
     void sig_transfer_pause(const QString& name, bool is_upload);
     void sig_transfer_resume(const QString& name, bool is_upload);
+    //上传失败后点“重试”：外部重新调用 UploadChatImage
+    void sig_transfer_retry(const QString& name);
 
 protected:
     //整张卡片可点：在容器上捕获鼠标点击（QLabel 不接收点击）
     void mousePressEvent(QMouseEvent* event) override;
+    //右键菜单：打开/另存为/打开所在文件夹/重新下载/删除消息
+    void contextMenuEvent(QContextMenuEvent* event) override;
 
 private:
     void refreshStatus();      //按 _local_path 是否存在刷新状态文字
     void refreshProgressText();
     void onPauseClicked();     //暂停/继续按钮
+    void OpenLocalFile();      //系统默认程序打开
+    void SaveAs();             //另存到用户指定位置
+    void OpenContainingFolder(); //打开文件所在目录
+    void Redownload();         //本地文件丢失/未下载：重新发起下载
 
     QLabel* _icon_lb;          //左侧文件图标（QSS 画的纸张图标或内置图标）
     QLabel* _name_lb;          //文件名（过长自动截断中间省略）

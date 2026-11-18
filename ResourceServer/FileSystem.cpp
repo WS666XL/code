@@ -264,6 +264,49 @@ void FileWorker::RegisterHandlers()
 	//    ChatServer 推 1039 ——通知放在"文件传完后"是老师版的关键设计：
 	//    对方收到通知时图片已就绪，立即下载不会 404
 	_handlers[ID_IMG_CHAT_UPLOAD_REQ] = [this](std::shared_ptr<FileTask> task) {
+		// ===== 秒传：服务器已有相同 md5 的文件 =====
+		// 直接硬链接到本次目标路径，不接收分块；链接失败退回复制
+		if (task->_instant) {
+			auto file_path = ConfigMgr::Inst().GetFileOutPath();
+			auto target = file_path / std::to_string(task->_uid) / task->_name;
+			boost::system::error_code ec;
+			if (!boost::filesystem::exists(target.parent_path())) {
+				boost::filesystem::create_directories(target.parent_path(), ec);
+			}
+			boost::filesystem::remove(target, ec);
+			ec.clear();
+			boost::filesystem::create_hard_link(task->_instant_source, target, ec);
+			if (ec) {
+				ec.clear();
+				boost::filesystem::copy_file(task->_instant_source, target,
+					boost::filesystem::copy_options::overwrite_existing, ec);
+			}
+			if (ec) {
+				LLOG_ERROR << "1037 秒传失败: " << target.string()
+					<< " err=" << ec.message() << std::endl;
+				return;
+			}
+
+			LLOG_INFO << "1037 秒传完成: " << target.string()
+				<< " message_id=" << task->_chat_msg_id << std::endl;
+
+			// 引用这个物理文件的消息又多了一条：MySQL 索引引用计数 +1
+			if (!task->_md5.empty()) {
+				MysqlMgr::GetInstance()->UpsertFileObject(task->_md5, task->_total_size,
+					std::to_string(task->_uid) + "/" + task->_name);
+			}
+
+			MysqlMgr::GetInstance()->UpdateUploadStatus(task->_chat_msg_id);
+
+			std::string uid_ip_value = "";
+			auto uid_ip_key = USERIPPREFIX + std::to_string(task->_receiver);
+			if (RedisMgr::GetInstance()->Get(uid_ip_key, uid_ip_value)) {
+				ChatServerGrpcClient::GetInstance()->NotifyChatImgMsg(
+					task->_chat_msg_id, uid_ip_value);
+			}
+			return;
+		}
+
 		// 解码
 		std::string decoded = base64_decode(task->_file_data);
 
@@ -343,6 +386,14 @@ void FileWorker::RegisterHandlers()
 
 		LLOG_INFO << "聊天图片已成功保存为: " << file_path_str
 			<< " message_id=" << task->_chat_msg_id << std::endl;
+
+		// 记录 md5 → 已存在文件路径：下次发送同一份文件直接秒传
+		// Redis 是缓存，MySQL 是最终真相（Redis 重启后仍能秒传）
+		if (!task->_md5.empty()) {
+			RedisMgr::GetInstance()->Set(FILE_MD5_PREFIX + task->_md5, file_path_str);
+			MysqlMgr::GetInstance()->UpsertFileObject(task->_md5, task->_total_size,
+				std::to_string(task->_uid) + "/" + task->_name);
+		}
 
 		//文件完整落盘：把图片消息状态置为已上传
 		MysqlMgr::GetInstance()->UpdateUploadStatus(task->_chat_msg_id);

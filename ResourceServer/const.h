@@ -30,6 +30,10 @@ enum MsgIds {
 #define USER_BASE_INFO "ubaseinfo_"  //用户信息缓存：<uid> → JSON(uid/pwd/name/email/nick/desc/sex/icon)
 #define USERIPPREFIX  "uip_"         //用户所在节点：<uid> → chatserver 名称（登录时写入，图片传完后按它找对方节点推通知）
 
+//秒传（md5 去重）相关
+#define FILE_MD5_PREFIX "filemd5_"       // <md5> → 已存在文件的绝对路径
+#define FILE_INSTANT_PREFIX "fileinstant_" // <uid>|<md5> → 本次秒传目标名（短 TTL，拦截同一上传在途分块）
+
 //包头布局：2 字节消息 id + 4 字节包体长度（均网络字节序/大端）
 #define HEAD_TOTAL_LEN 6
 #define HEAD_ID_LEN 2

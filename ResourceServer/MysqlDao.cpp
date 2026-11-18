@@ -166,3 +166,96 @@ bool MysqlDao::UpdateUploadStatus(int chat_message_id)
 		return false;
 	}
 }
+
+// ===== 文件秒传索引 =====
+// 查 md5 对应的物理文件；Redis 未命中时用它兜底，保证 Redis 重启后仍能秒传
+bool MysqlDao::GetFileObject(const std::string& md5, FileObjectInfo& info)
+{
+	if (md5.empty()) {
+		return false;
+	}
+	auto con = pool_->getConnection();
+	if (!con) {
+		return false;
+	}
+	Defer defer([this, &con]() {
+		pool_->returnConnection(std::move(con));
+		});
+
+	try {
+		std::unique_ptr<sql::PreparedStatement> pstmt(con->_con->prepareStatement(
+			"SELECT file_size, file_path FROM file_object WHERE md5 = ?"));
+		pstmt->setString(1, md5);
+		std::unique_ptr<sql::ResultSet> res(pstmt->executeQuery());
+		if (res->next()) {
+			info.file_size = res->getInt64("file_size");
+			info.file_path = res->getString("file_path");
+			return true;
+		}
+		return false;
+	}
+	catch (sql::SQLException& e) {
+		LLOG_ERROR << "SQLException in GetFileObject: " << e.what() << std::endl;
+		return false;
+	}
+}
+
+// 记录/更新 md5 索引。已存在时只增加引用计数，不改原路径：
+// 原路径是已经验证过存在的文件，改路径反而可能指向一个随后被删的文件
+bool MysqlDao::UpsertFileObject(const std::string& md5, int64_t file_size,
+	const std::string& rel_path)
+{
+	if (md5.empty() || rel_path.empty()) {
+		return false;
+	}
+	auto con = pool_->getConnection();
+	if (!con) {
+		return false;
+	}
+	Defer defer([this, &con]() {
+		pool_->returnConnection(std::move(con));
+		});
+
+	try {
+		std::unique_ptr<sql::PreparedStatement> pstmt(con->_con->prepareStatement(
+			"INSERT INTO file_object (md5, file_size, file_path, ref_count) "
+			"VALUES (?, ?, ?, 1) "
+			"ON DUPLICATE KEY UPDATE ref_count = ref_count + 1"));
+		pstmt->setString(1, md5);
+		pstmt->setInt64(2, file_size);
+		pstmt->setString(3, rel_path);
+		pstmt->executeUpdate();
+		return true;
+	}
+	catch (sql::SQLException& e) {
+		LLOG_ERROR << "SQLException in UpsertFileObject: " << e.what() << std::endl;
+		return false;
+	}
+}
+
+// 索引指向的文件已不存在/大小不符时删掉，避免每次秒传都命中坏记录
+bool MysqlDao::DeleteFileObject(const std::string& md5)
+{
+	if (md5.empty()) {
+		return false;
+	}
+	auto con = pool_->getConnection();
+	if (!con) {
+		return false;
+	}
+	Defer defer([this, &con]() {
+		pool_->returnConnection(std::move(con));
+		});
+
+	try {
+		std::unique_ptr<sql::PreparedStatement> pstmt(con->_con->prepareStatement(
+			"DELETE FROM file_object WHERE md5 = ?"));
+		pstmt->setString(1, md5);
+		pstmt->executeUpdate();
+		return true;
+	}
+	catch (sql::SQLException& e) {
+		LLOG_ERROR << "SQLException in DeleteFileObject: " << e.what() << std::endl;
+		return false;
+	}
+}

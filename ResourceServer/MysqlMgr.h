@@ -25,6 +25,18 @@ public:
 	bool UpdateUploadStatus(int chat_message_id) {
 		return _dao.UpdateUploadStatus(chat_message_id);
 	}
+
+	// ===== 文件秒传索引（MySQL 为最终真相，Redis 只是缓存） =====
+	bool GetFileObject(const std::string& md5, FileObjectInfo& info) {
+		return _dao.GetFileObject(md5, info);
+	}
+	bool UpsertFileObject(const std::string& md5, int64_t file_size,
+		const std::string& rel_path) {
+		return _dao.UpsertFileObject(md5, file_size, rel_path);
+	}
+	bool DeleteFileObject(const std::string& md5) {
+		return _dao.DeleteFileObject(md5);
+	}
 private:
 	MysqlMgr() {
 	}

@@ -7,6 +7,7 @@
 #include <QFileInfo>
 #include <QDir>
 #include <QStandardPaths>
+#include <QSettings>
 #include <QCryptographicHash>
 #include "usermgr.h"
 
@@ -396,11 +397,22 @@ void FileTcpMgr::initHandlers()
             return;
         }
 
+        bool instant = jsonObj["instant"].toBool();
         if (!msg_info) {
-            // 已经收尾的文件（例如最后一块回执晚到）：只释放窗口，不再续发
-            if (_cwnd_size > 0) {
+            // 已经收尾的文件（例如最后一块回执晚到）：只释放窗口，不再续发。
+            // 秒传的晚到回执不占窗口（FinishChatUpload 已经一次性收回）
+            if (!instant && _cwnd_size > 0) {
                 --_cwnd_size;
             }
+            return;
+        }
+
+        if (instant) {
+            // 秒传命中：服务端已有相同 md5 的文件，不用再发剩余分块
+            LLOG_DEBUG << "FileTcpMgr img chat upload instant done:" << name;
+            msg_info->_rsp_size = msg_info->_total_size;
+            emit sig_chat_upload_progress(name, msg_info->_total_size, msg_info->_total_size);
+            FinishChatUpload(msg_info, true);
             return;
         }
 
@@ -532,14 +544,41 @@ void FileTcpMgr::initHandlers()
         emit sig_chat_download_progress(name, current_size, total_size);
 
         if (is_last) {
-            LLOG_DEBUG << "FileTcpMgr download done:" << name
-                     << "->" << ctx_iter->client_path;
-            // 原子替换：移走旧文件后把写好的临时文件改成正式文件
-            QFile::remove(ctx_iter->client_path);
-            QFile::rename(write_path, ctx_iter->client_path);
+            // 聊天文件：临时文件是 UUID，最终要落到“下载/llfcchat/原始文件名”；
+            // 图片/头像 final_path 为空，仍然就是原来的缓存路径
+            QString target = ctx_iter->final_path.isEmpty()
+                                 ? ctx_iter->client_path
+                                 : ctx_iter->final_path;
+            QDir().mkpath(QFileInfo(target).absolutePath());
+            QFile::remove(target);
+            bool moved = QFile::rename(write_path, target);
+            if (!moved) {
+                // AppData 和下载目录可能不在同一个文件系统，rename 会失败，
+                // 退回“复制 + 删除临时文件”
+                if (QFile::copy(write_path, target)) {
+                    QFile::remove(write_path);
+                    moved = true;
+                }
+            }
+            if (!moved) {
+                LLOG_DEBUG << "FileTcpMgr download move failed:" << name
+                         << "->" << target;
+                _downloading.erase(ctx_iter);
+                emit sig_download_failed(name);
+                return;
+            }
+
+            QString downloaded_name = ctx_iter->name;
+            bool remember = !ctx_iter->final_path.isEmpty();
             _downloading.erase(ctx_iter);
+            if (remember) {
+                // 记录 unique_name → 实际保存路径，重新登录后优先复用
+                RememberSavedPath(downloaded_name, target);
+            }
+            LLOG_DEBUG << "FileTcpMgr download done:" << downloaded_name
+                     << "->" << target;
             // 本地文件已就绪：通知界面把还显示着占位图的头像/图片气泡重新加载
-            emit sig_file_downloaded(name);
+            emit sig_file_downloaded(downloaded_name);
             return;
         }
 
@@ -799,7 +838,10 @@ void FileTcpMgr::FinishChatUpload(std::shared_ptr<MsgInfo> msg_info, bool succes
     msg_info->_flighting_seqs.clear();
     msg_info->_rsp_seqs.clear();
 
-    UserMgr::GetInstance()->RmvTransFile(name);
+    if (success) {
+        // 成功才移出传输表；失败保留 MsgInfo，气泡上的“重试”才能找回上传任务
+        UserMgr::GetInstance()->RmvTransFile(name);
+    }
     if (_active_upload == name) {
         _active_upload.clear();
         StartNextUpload();
@@ -965,7 +1007,10 @@ void FileTcpMgr::DownloadChatImage(const QString& imgName, int senderUid)
 // 下载聊天文件（day41）：与 DownloadChatImage 完全同构，只是缓存目录换成
 // AppData/<我的uid>/chatfile/<发送者uid>/（文件卡片下载的是文件本体，
 // 与气泡预览用的图片缓存分开，互不干扰）
-void FileTcpMgr::DownloadChatFile(const QString& fileName, int senderUid)
+// 下载聊天文件（day41）：临时文件仍按 unique_name 放 AppData 保证断点续传，
+// 下载完成后另存到“下载/llfcchat/原始文件名”，并写入本地路径索引
+void FileTcpMgr::DownloadChatFile(const QString& fileName, int senderUid,
+                                  const QString& originalName)
 {
     if (_socket.state() != QAbstractSocket::ConnectedState) {
         LLOG_DEBUG << "FileTcpMgr DownloadChatFile failed: resource server not connected";
@@ -975,6 +1020,7 @@ void FileTcpMgr::DownloadChatFile(const QString& fileName, int senderUid)
         return;
     }
 
+    // 临时目录：保持 UUID 命名，暂停/重启后按 .tmp 续传
     QString storage_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QString file_dir = storage_dir + "/" + QString::number(UserMgr::GetInstance()->GetUid())
                        + "/chatfile/" + QString::number(senderUid);
@@ -987,6 +1033,18 @@ void FileTcpMgr::DownloadChatFile(const QString& fileName, int senderUid)
     if (_downloading.contains(client_path)) {
         return;
     }
+
+    // 最终保存路径：下载目录/llfcchat/原始文件名（重名自动加序号）
+    QString save_dir = ResolveDownloadDir();
+    if (save_dir.isEmpty()) {
+        LLOG_DEBUG << "FileTcpMgr DownloadChatFile: cannot resolve download dir";
+        return;
+    }
+    QString save_name = QFileInfo(originalName).fileName();   //去掉可能的路径部分
+    if (save_name.isEmpty()) {
+        save_name = fileName;                                  //老服务端没有原始名时兜底
+    }
+    QString final_path = MakeUniqueFinalPath(save_dir, save_name);
 
     // 与聊天图片同构：.tmp 有半截就从对应 seq 续下
     int start_seq = 1;
@@ -1006,14 +1064,84 @@ void FileTcpMgr::DownloadChatFile(const QString& fileName, int senderUid)
     ctx.owner_uid = senderUid;
     ctx.name = fileName;
     ctx.client_path = client_path;
+    ctx.final_path = final_path;
     ctx.next_seq = start_seq;
     ctx.in_flight = true;
     ctx.resume_allowed = true;
     _downloading.insert(client_path, ctx);
 
     LLOG_DEBUG << "FileTcpMgr DownloadChatFile start:" << fileName
-             << "sender" << senderUid << "seq" << start_seq;
+             << "sender" << senderUid << "seq" << start_seq
+             << "save as" << final_path;
     SendDownloadReq(fileName, senderUid, ctx.client_path, start_seq);
+}
+
+// 路径索引文件：AppData/<uid>/file_index.ini
+QString FileTcpMgr::FileIndexPath() const
+{
+    int uid = UserMgr::GetInstance()->GetUid();
+    if (uid <= 0) {
+        return QString();
+    }
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+           + "/" + QString::number(uid) + "/file_index.ini";
+}
+
+QString FileTcpMgr::LookupSavedPath(const QString& uniqueName) const
+{
+    if (uniqueName.isEmpty()) {
+        return QString();
+    }
+    QString index_path = FileIndexPath();
+    if (index_path.isEmpty()) {
+        return QString();
+    }
+    QSettings settings(index_path, QSettings::IniFormat);
+    return settings.value("files/" + uniqueName).toString();
+}
+
+void FileTcpMgr::RememberSavedPath(const QString& uniqueName, const QString& path)
+{
+    if (uniqueName.isEmpty() || path.isEmpty()) {
+        return;
+    }
+    QString index_path = FileIndexPath();
+    if (index_path.isEmpty()) {
+        return;
+    }
+    QDir().mkpath(QFileInfo(index_path).absolutePath());
+    QSettings settings(index_path, QSettings::IniFormat);
+    settings.setValue("files/" + uniqueName, path);
+    settings.sync();
+}
+
+// 用户可见的下载目录：<系统下载目录>/llfcchat
+QString FileTcpMgr::ResolveDownloadDir() const
+{
+    QString base = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    if (base.isEmpty()) {
+        base = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/Downloads";
+    }
+    QString dir_path = base + "/llfcchat";
+    QDir dir(dir_path);
+    if (!dir.exists() && !dir.mkpath(".")) {
+        return QString();
+    }
+    return dir_path;
+}
+
+// 同名文件自动加 (1)(2)...，不覆盖用户已有文件
+QString FileTcpMgr::MakeUniqueFinalPath(const QString& dir, const QString& fileName) const
+{
+    QFileInfo info(fileName);
+    QString base = info.completeBaseName();
+    QString suffix = info.suffix();
+    QString candidate = dir + "/" + fileName;
+    for (int i = 1; QFileInfo::exists(candidate) && i < 1000; ++i) {
+        candidate = dir + "/" + base + " (" + QString::number(i) + ")"
+                    + (suffix.isEmpty() ? QString() : "." + suffix);
+    }
+    return candidate;
 }
 
 // 上传聊天图片/文件（1037）：发送方收到 1036（拿到 message_id）后调用。

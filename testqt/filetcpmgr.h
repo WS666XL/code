@@ -80,9 +80,14 @@ public:
     // 图片服务器落盘在 output/static/<senderUid>/<imgName>，本地缓存到
     // AppData/<我的uid>/chatimg/<senderUid>/<imgName>；完成后发 sig_file_downloaded
     void DownloadChatImage(const QString& imgName, int senderUid);
-    // 下载聊天文件（day41：与图片同一条 1033 通道，缓存目录换 chatfile）：
-    // 完成后同样发 sig_file_downloaded，文件卡片把状态切到"点击打开"
-    void DownloadChatFile(const QString& fileName, int senderUid);
+    // 下载聊天文件（day41：与图片同一条 1033 通道）：
+    // 临时文件放 AppData/.../chatfile/<sender>/<unique_name>.tmp 保证断点续传，
+    // 下载完成后另存为“下载/llfcchat/原始文件名”，并记录本地路径索引
+    void DownloadChatFile(const QString& fileName, int senderUid,
+                          const QString& originalName = QString());
+    // 已下载文件的本地路径（unique_name → 实际保存路径）。
+    // 重新登录/切换会话时优先用它找文件，避免重复下载
+    QString LookupSavedPath(const QString& uniqueName) const;
     // 上传聊天图片/文件（1037 链路）：1035 拿到 message_id 后调用。
     // 按唯一文件名从 UserMgr 取回 MsgInfo，进入拥塞窗口发送队列：
     // 窗口内最多 MAX_CWND_SIZE 块在途，每收到一条 1038 回执放行下一块
@@ -152,7 +157,8 @@ private:
     struct DownloadCtx {
         int owner_uid = 0;
         QString name;          //服务器文件名（暂停/继续按它找回上下文）
-        QString client_path;   //最终保存路径
+        QString client_path;   //临时文件路径（UUID，断点续传用）
+        QString final_path;    //最终保存路径（聊天文件=下载目录+原始文件名；图片/头像为空）
         int next_seq = 1;      //下一块要请求的 seq
         bool in_flight = false;//已发出 1033、等 1034 回包
         bool paused = false;   //暂停：回包到达后不再请求下一块
@@ -164,6 +170,15 @@ private:
 
     // 按名字找下载上下文（聊天图片/文件唯一名；头像不参与暂停，同名也不会误伤）
     DownloadCtx* FindDownloadCtx(const QString& name);
+
+    // ===== 聊天文件本地路径索引 =====
+    // AppData/<uid>/file_index.ini：unique_name → 下载后的实际路径
+    QString FileIndexPath() const;
+    void RememberSavedPath(const QString& uniqueName, const QString& path);
+    // 中文"下载"目录下的 llfcchat 子目录；目录不存在会自动创建
+    QString ResolveDownloadDir() const;
+    // 同名文件自动加 (1)(2)，避免覆盖用户已有文件
+    QString MakeUniqueFinalPath(const QString& dir, const QString& fileName) const;
 
     // ===== 上传拥塞窗口（day40）=====
     int _cwnd_size = 0;                 // 整条连接上"已发未回 1038"的分块数

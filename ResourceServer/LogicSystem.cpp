@@ -3,8 +3,10 @@
 #include "FileSystem.h"
 #include "RedisMgr.h"
 #include "ConfigMgr.h"
+#include "MysqlMgr.h"
 #include "base64.h"
 #include <fstream>
+#include <boost/filesystem.hpp>
 #include <json/json.h>
 #include <json/value.h>
 #include <json/reader.h>
@@ -513,6 +515,99 @@ void LogicWorker::RegisterCallBacks()
 				if (token_value != token) {
 					rtvalue["error"] = ErrorCodes::TokenInvalid;
 					return;
+				}
+			}
+
+			// ===== 秒传：md5 命中服务器已有文件，直接硬链接到本次目标路径 =====
+			// 同一份文件第二次发送时，服务器不再收一遍分块
+			if (!md5.empty() && !name.empty()) {
+				const std::string target_path = (ConfigMgr::Inst().GetFileOutPath()
+					/ std::to_string(sender) / name).string();
+				boost::system::error_code fs_ec;
+				bool target_ready = false;
+				if (boost::filesystem::exists(target_path, fs_ec) && !fs_ec) {
+					auto target_size = boost::filesystem::file_size(target_path, fs_ec);
+					target_ready = !fs_ec && (int64_t)target_size == (int64_t)total_size;
+				}
+
+				// seq>1 的在途分块：秒传任务已经受理，直接回成功，
+				// 避免客户端把 "进度不存在" 当成断点丢失又重传一遍
+				std::string instant_mark;
+				bool instant_uploading = RedisMgr::GetInstance()->Get(
+					FILE_INSTANT_PREFIX + std::to_string(sender) + "|" + md5, instant_mark);
+				if (target_ready || (seq > 1 && instant_uploading)) {
+					rtvalue["error"] = ErrorCodes::Success;
+					rtvalue["instant"] = true;
+					rtvalue["trans_size"] = total_size;
+					rtvalue["last"] = 1;
+					return;
+				}
+
+				if (seq == 1) {
+					std::string cached_path;
+					bool cached_ok = false;
+
+					// 1) 先查 Redis 缓存
+					bool has_cached = RedisMgr::GetInstance()->Get(
+						FILE_MD5_PREFIX + md5, cached_path);
+					if (has_cached && boost::filesystem::exists(cached_path, fs_ec) && !fs_ec) {
+						auto cached_size = boost::filesystem::file_size(cached_path, fs_ec);
+						cached_ok = !fs_ec && (int64_t)cached_size == (int64_t)total_size;
+					}
+					if (has_cached && !cached_ok) {
+						// 缓存指向的文件已被删/大小不对：清掉，继续查 MySQL
+						RedisMgr::GetInstance()->Del(FILE_MD5_PREFIX + md5);
+					}
+
+					// 2) Redis 未命中/失效：查 MySQL（Redis 重启后依然能秒传）
+					if (!cached_ok) {
+						FileObjectInfo obj;
+						if (MysqlMgr::GetInstance()->GetFileObject(md5, obj)
+							&& (int64_t)obj.file_size == (int64_t)total_size) {
+							std::string abs_path = (
+								ConfigMgr::Inst().GetFileOutPath() / obj.file_path).string();
+							boost::system::error_code db_ec;
+							if (boost::filesystem::exists(abs_path, db_ec) && !db_ec) {
+								auto sz = boost::filesystem::file_size(abs_path, db_ec);
+								if (!db_ec && (int64_t)sz == (int64_t)total_size) {
+									cached_path = abs_path;
+									cached_ok = true;
+									// 回填 Redis，下次走缓存
+									RedisMgr::GetInstance()->Set(
+										FILE_MD5_PREFIX + md5, abs_path);
+								}
+							}
+							if (!cached_ok) {
+								// DB 记录指向的文件已不存在：删掉坏记录，走普通上传
+								MysqlMgr::GetInstance()->DeleteFileObject(md5);
+							}
+						}
+					}
+
+					if (cached_ok) {
+						// 短 TTL 标记：本次上传后续 seq 来了也直接回成功
+						RedisMgr::GetInstance()->SetExp(
+							FILE_INSTANT_PREFIX + std::to_string(sender) + "|" + md5,
+							name, 120);
+
+						std::hash<std::string> hash_fn;
+						int index = int(hash_fn(name) % FILE_WORKER_COUNT);
+						auto task = std::make_shared<FileTask>(session,
+							ID_IMG_CHAT_UPLOAD_REQ, name, seq, total_size,
+							total_size, 1, "", sender);
+						task->_md5 = md5;
+						task->_chat_msg_id = message_id;
+						task->_receiver = receiver;
+						task->_instant = true;
+						task->_instant_source = cached_path;
+						FileSystem::GetInstance()->PostMsgToQue(task, index);
+
+						rtvalue["error"] = ErrorCodes::Success;
+						rtvalue["instant"] = true;
+						rtvalue["trans_size"] = total_size;
+						rtvalue["last"] = 1;
+						return;
+					}
 				}
 			}
 

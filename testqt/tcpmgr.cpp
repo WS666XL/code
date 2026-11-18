@@ -764,6 +764,8 @@ void TcpMgr::initHandlers()
                 msg_info->_msg_id = msg_id;
                 msg_info->_sender = send_uid;
                 msg_info->_receiver = UserMgr::GetInstance()->GetUid();
+                //历史记录里的文件大小（修复重新登录后文件卡片显示 0.0 KB）
+                msg_info->_total_size = data["file_size"].toVariant().toLongLong();
                 auto chat_data = std::make_shared<ImgChatData>(msg_info, "",
                     thread_id, ChatFormType::PRIVATE, static_cast<ChatMsgType>(msg_type),
                     send_uid, status, chat_time);

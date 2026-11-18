@@ -1,6 +1,12 @@
 #include "filebubble.h"
 #include <QMouseEvent>
+#include <QContextMenuEvent>
 #include <QDesktopServices>
+#include <QDir>
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QMenu>
+#include <QMessageBox>
 #include <QUrl>
 #include <QTimer>
 #include <QProgressBar>
@@ -177,6 +183,16 @@ void FileBubble::setTransferState(TransferState state)
         });
         break;
     case TransferState::Failed:
+        _progress_bar->hide();
+        if (_is_upload && !_unique_name.isEmpty()) {
+            // 上传失败：保留一个“重试”入口，用户不用重新选文件
+            _pause_btn->setText(QStringLiteral("重试"));
+            _pause_btn->show();
+        }
+        else {
+            _pause_btn->hide();
+        }
+        break;
     case TransferState::None:
         _progress_bar->hide();
         _pause_btn->hide();
@@ -197,9 +213,13 @@ void FileBubble::refreshProgressText()
     }
 }
 
-//按钮点击：传输中 → 暂停；已暂停 → 继续（具体调上传还是下载由 ChatPage 判断）
+//按钮点击：传输中 → 暂停；已暂停 → 继续；上传失败 → 重试
 void FileBubble::onPauseClicked()
 {
+    if (_state == TransferState::Failed && _is_upload) {
+        emit sig_transfer_retry(_unique_name);
+        return;
+    }
     if (_state == TransferState::Uploading || _state == TransferState::Downloading) {
         setTransferState(TransferState::Paused);
         emit sig_transfer_pause(_unique_name, _is_upload);
@@ -215,9 +235,17 @@ void FileBubble::onPauseClicked()
 void FileBubble::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
-        //点击语义：已下载 → 用系统默认程序打开文件；未下载 → 交给外部发起下载
+        //点击语义：已下载 → 用系统默认程序打开；未下载 → 交给外部发起下载
         if (!_local_path.isEmpty()) {
-            QDesktopServices::openUrl(QUrl::fromLocalFile(_local_path));
+            if (!QFileInfo::exists(_local_path)) {
+                //文件被用户移动/删除：清掉失效路径，提示重新下载
+                QMessageBox::information(this, QStringLiteral("提示"),
+                    QStringLiteral("文件已被移动或删除，请右键选择“重新下载”。"));
+                _local_path.clear();
+                refreshStatus();
+                return;
+            }
+            OpenLocalFile();
         }
         else {
             emit sig_card_clicked();
@@ -225,4 +253,96 @@ void FileBubble::mousePressEvent(QMouseEvent* event)
         return;
     }
     BubbleFrame::mousePressEvent(event);
+}
+
+//右键菜单：文件操作 + 删除消息（删除仍走基类信号，交给 ChatPage 处理）
+void FileBubble::contextMenuEvent(QContextMenuEvent* event)
+{
+    QMenu menu(this);
+    bool exists = !_local_path.isEmpty() && QFileInfo::exists(_local_path);
+
+    if (exists) {
+        menu.addAction(QStringLiteral("打开"), this, &FileBubble::OpenLocalFile);
+        menu.addAction(QStringLiteral("另存为..."), this, &FileBubble::SaveAs);
+        menu.addAction(QStringLiteral("打开所在文件夹"), this, &FileBubble::OpenContainingFolder);
+    }
+    else {
+        menu.addAction(QStringLiteral("下载"), this, &FileBubble::Redownload);
+    }
+
+    if (_state == TransferState::Failed && _is_upload) {
+        menu.addAction(QStringLiteral("重新上传"), this, [this]() {
+            emit sig_transfer_retry(_unique_name);
+        });
+    }
+
+    menu.addSeparator();
+    menu.addAction(QStringLiteral("删除消息"), this, [this]() {
+        emit sig_delete_requested();
+    });
+
+    menu.exec(event->globalPos());
+    event->accept();
+}
+
+void FileBubble::OpenLocalFile()
+{
+    if (_local_path.isEmpty()) {
+        return;
+    }
+    QDesktopServices::openUrl(QUrl::fromLocalFile(_local_path));
+}
+
+void FileBubble::SaveAs()
+{
+    if (_local_path.isEmpty() || !QFileInfo::exists(_local_path)) {
+        return;
+    }
+    QString default_name = _file_name.isEmpty() ? QFileInfo(_local_path).fileName()
+                                                : _file_name;
+    QString path = QFileDialog::getSaveFileName(
+        this, QStringLiteral("另存为"),
+        QDir::homePath() + "/" + default_name);
+    if (path.isEmpty()) {
+        return;
+    }
+    // 选的就是原文件本身：直接当成功，不能先 remove 再 copy 把自己删掉
+    if (QFileInfo(path).absoluteFilePath()
+        == QFileInfo(_local_path).absoluteFilePath()) {
+        return;
+    }
+    if (QFile::exists(path) && !QFile::remove(path)) {
+        QMessageBox::warning(this, QStringLiteral("保存失败"),
+            QStringLiteral("目标文件无法覆盖，请换一个位置。"));
+        return;
+    }
+    if (!QFile::copy(_local_path, path)) {
+        QMessageBox::warning(this, QStringLiteral("保存失败"),
+            QStringLiteral("复制文件失败，请检查目标路径权限。"));
+    }
+}
+
+void FileBubble::OpenContainingFolder()
+{
+    if (_local_path.isEmpty()) {
+        return;
+    }
+    QDesktopServices::openUrl(
+        QUrl::fromLocalFile(QFileInfo(_local_path).absolutePath()));
+}
+
+void FileBubble::Redownload()
+{
+    //发送时创建的气泡没有接下载回调：原文件不在本机时提示重新发送，
+    //避免卡片一直停在“下载中”
+    if (receivers(SIGNAL(sig_card_clicked())) <= 0) {
+        setTransferState(TransferState::None);
+        QMessageBox::information(this, QStringLiteral("提示"),
+            QStringLiteral("原文件已不在本机，请重新选择文件发送。"));
+        return;
+    }
+    _local_path.clear();
+    setTransferState(TransferState::Downloading);
+    refreshStatus();
+    emit sig_card_clicked();
 }

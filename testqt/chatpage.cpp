@@ -662,9 +662,20 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
         bool is_file = (msg->GetMsgType() == ChatMsgType::FILE);
         ChatRole role = is_self ? ChatRole::Self : ChatRole::Other;
 
-        //解析本地路径：发送方是原始路径；接收方查缓存目录（图片/文件各一个）
+        //解析本地路径：发送方是原始路径；接收方优先查“下载目录索引”，
+        //再退回旧的 AppData UUID 缓存（兼容之前下载过的文件）
         QString cache_subdir = is_file ? "chatfile" : "chatimg";
         QString local_path = msg_info->content;
+        if (local_path.isEmpty() || !QFileInfo::exists(local_path)) {
+            if (is_file) {
+                QString saved = FileTcpMgr::GetInstance()->LookupSavedPath(
+                    msg_info->_unique_name);
+                if (!saved.isEmpty() && QFileInfo::exists(saved)) {
+                    local_path = saved;
+                    msg_info->content = local_path;
+                }
+            }
+        }
         if (local_path.isEmpty() || !QFileInfo::exists(local_path)) {
             QString storage_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
             local_path = storage_dir + "/" + QString::number(self_info->_uid)
@@ -713,40 +724,57 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
             }
             else {
                 need_download = true;
-                //点击 → 发起 1033 下载（chatfile 目录）+ 登记成功/失败回调
-                connect(file_bubble, &FileBubble::sig_card_clicked, this,
-                    [this, file_bubble, msg_info, sender_uid]() {
-                        _download_bubbles[msg_info->_unique_name] = file_bubble;
-                        _download_done_map[msg_info->_unique_name] = [file_bubble, msg_info, sender_uid]() {
+            }
+            //点击 → 发起 1033 下载 + 登记成功/失败回调。
+            //本地已有文件时左键会直接打开，不会走到这里；本地文件被移走后，
+            //右键“重新下载”也会复用这套回调，所以无论当前有没有文件都连上
+            connect(file_bubble, &FileBubble::sig_card_clicked, this,
+                [this, file_bubble, msg_info, sender_uid]() {
+                    _download_bubbles[msg_info->_unique_name] = file_bubble;
+                    _download_done_map[msg_info->_unique_name] = [file_bubble, msg_info, sender_uid]() {
+                        // 下载完成后优先按索引找：文件实际保存在“下载/llfcchat/原始名”
+                        QString local_path = FileTcpMgr::GetInstance()->LookupSavedPath(
+                            msg_info->_unique_name);
+                        if (local_path.isEmpty()) {
+                            // 兼容旧版本：没有索引时按 UUID 缓存路径找
                             QString storage_dir = QStandardPaths::writableLocation(
                                 QStandardPaths::AppDataLocation);
-                            QString local_path = storage_dir + "/"
+                            local_path = storage_dir + "/"
                                 + QString::number(UserMgr::GetInstance()->GetUid())
                                 + "/chatfile/" + QString::number(sender_uid)
                                 + "/" + msg_info->_unique_name;
-                            if (QFileInfo::exists(local_path)) {
-                                file_bubble->setLocalPath(local_path);
-                            }
-                            else {
-                                file_bubble->setDownloadFailed();
-                            }
-                        };
-                        _download_fail_map[msg_info->_unique_name] = [file_bubble]() {
-                            file_bubble->setDownloadFailed();
-                        };
-                        file_bubble->setDownloading();
-                        // 已经暂停的下载：只恢复"已暂停"显示，等用户点继续再请求，
-                        // 不在这里自动续下（否则暂停语义就失效了）
-                        if (FileTcpMgr::GetInstance()->IsDownloadPaused(
-                                msg_info->_unique_name)) {
-                            file_bubble->setTransferState(TransferState::Paused);
+                        }
+                        if (QFileInfo::exists(local_path)) {
+                            file_bubble->setLocalPath(local_path);
                         }
                         else {
-                            FileTcpMgr::GetInstance()->DownloadChatFile(
-                                msg_info->_unique_name, sender_uid);
+                            file_bubble->setDownloadFailed();
                         }
-                    });
-            }
+                    };
+                    _download_fail_map[msg_info->_unique_name] = [file_bubble]() {
+                        file_bubble->setDownloadFailed();
+                    };
+                    file_bubble->setDownloading();
+                    // 已经暂停的下载：只恢复"已暂停"显示，等用户点继续再请求，
+                    // 不在这里自动续下（否则暂停语义就失效了）
+                    if (FileTcpMgr::GetInstance()->IsDownloadPaused(
+                            msg_info->_unique_name)) {
+                        file_bubble->setTransferState(TransferState::Paused);
+                    }
+                    else {
+                        FileTcpMgr::GetInstance()->DownloadChatFile(
+                            msg_info->_unique_name, sender_uid,
+                            msg_info->_file_name);
+                    }
+                });
+            //上传失败后的“重新上传”入口
+            connect(file_bubble, &FileBubble::sig_transfer_retry, this,
+                [this, file_bubble](const QString& name) {
+                    _upload_bubbles[name] = file_bubble;
+                    if (FileTcpMgr::GetInstance()->UploadChatImage(name)) {
+                        file_bubble->setTransferState(TransferState::Uploading);
+                    }
+                });
             pChatItem->setWidget(file_bubble);
         }
         else {
@@ -1016,6 +1044,14 @@ void ChatPage::on_send_btn_clicked()
             }
             else if (auto* file = qobject_cast<FileBubble*>(bubble)) {
                 file->setTransferState(TransferState::Uploading);
+                //上传失败后的重试入口（发送时创建的气泡也要支持）
+                connect(file, &FileBubble::sig_transfer_retry, this,
+                    [this, file](const QString& name) {
+                        _upload_bubbles[name] = file;
+                        if (FileTcpMgr::GetInstance()->UploadChatImage(name)) {
+                            file->setTransferState(TransferState::Uploading);
+                        }
+                    });
             }
             //登记到"上传中"表：1038 回执按 unique_name 找到这个气泡刷进度条
             _upload_bubbles.insert(msg_info->_unique_name, bubble);
@@ -1045,6 +1081,7 @@ void ChatPage::on_send_btn_clicked()
             imgObj["unique_id"] = uuidString;
             imgObj["msg_type"] = static_cast<int>(msg_type);
             imgObj["file_name"] = msg_info->_file_name;
+            imgObj["total_size"] = msg_info->_total_size;   //入库后历史记录显示文件大小
             QJsonDocument doc(imgObj);
             emit TcpMgr::GetInstance()->sig_send_data(ReqId::ID_IMG_CHAT_MSG_REQ,
                 doc.toJson(QJsonDocument::Compact));

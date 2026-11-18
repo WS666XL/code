@@ -479,6 +479,7 @@ void LogicSystem::LoadChatMsg(std::shared_ptr<CSession> session,
 		chat_data["chat_time"] = chat.chat_time;
 		chat_data["status"] = chat.status;
 		chat_data["msg_type"] = chat.msg_type;
+		chat_data["file_size"] = static_cast<Json::Int64>(chat.file_size);
 		chat_data["receiver"] = chat.recv_id;
 		rtvalue["chat_datas"].append(chat_data);
 	}
@@ -1144,6 +1145,8 @@ void LogicSystem::DealChatImgMsg(std::shared_ptr<CSession> session, const short&
 	if (msg_type != int(ChatMsgType::PIC) && msg_type != int(ChatMsgType::FILE)) {
 		msg_type = int(ChatMsgType::PIC);   //非法值兜底为图片
 	}
+	//文件大小：图片/文件消息都要入库，历史记录里文件卡片才能显示真实大小
+	auto total_size = root["total_size"].asInt64();
 
 	Json::Value rtvalue;
 	rtvalue["error"] = ErrorCodes::Success;
@@ -1173,6 +1176,7 @@ void LogicSystem::DealChatImgMsg(std::shared_ptr<CSession> session, const short&
 	chat_msg->content = content;
 	chat_msg->status = 0;   //资源未上传完成
 	chat_msg->msg_type = msg_type;
+	chat_msg->file_size = total_size;
 
 	std::vector<std::shared_ptr<ChatMessage>> chat_datas;
 	chat_datas.push_back(chat_msg);

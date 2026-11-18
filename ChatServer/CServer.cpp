@@ -4,8 +4,36 @@
 #include "AsioIOServicePool.h"
 #include"UserMgr.h"
 CServer::CServer(boost::asio::io_context& io_context, short port):_io_context(io_context), _port(port),
-_acceptor(io_context, tcp::endpoint(tcp::v4(),port))
+_acceptor(io_context)
 {
+	// 先 open + reuse_address 再 bind：
+	// 否则快速重启时旧进程的监听 socket 还没完全释放，bind 会抛异常，
+	// 异常穿过 joinable 的 std::thread 析构会导致 terminate（日志表现为
+	// "terminate called without an active exception"）
+	boost::system::error_code ec;
+	_acceptor.open(tcp::v4(), ec);
+	if (ec) {
+		LLOG_ERROR << "Server open failed, port " << _port
+			<< " err=" << ec.message() << endl;
+		throw boost::system::system_error(ec);
+	}
+	_acceptor.set_option(tcp::acceptor::reuse_address(true), ec);
+	if (ec) {
+		LLOG_ERROR << "Server set reuse_address failed, port " << _port
+			<< " err=" << ec.message() << endl;
+	}
+	_acceptor.bind(tcp::endpoint(tcp::v4(), port), ec);
+	if (ec) {
+		LLOG_ERROR << "Server bind failed, port " << _port
+			<< " err=" << ec.message() << endl;
+		throw boost::system::system_error(ec);
+	}
+	_acceptor.listen(boost::asio::socket_base::max_listen_connections, ec);
+	if (ec) {
+		LLOG_ERROR << "Server listen failed, port " << _port
+			<< " err=" << ec.message() << endl;
+		throw boost::system::system_error(ec);
+	}
 	LLOG_INFO << "Server start success, listen on port : " << _port << endl;
 	StartAccept();
 }

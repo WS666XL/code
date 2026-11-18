@@ -124,6 +124,7 @@ CREATE TABLE `chat_message` (
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `status` tinyint NOT NULL DEFAULT '0' COMMENT '0=未送达 1=已读 2=已送达(资源完成)',
   `msg_type` tinyint NOT NULL DEFAULT '0' COMMENT '0=文本 1=图片 3=文件',
+  `file_size` bigint NOT NULL DEFAULT '0' COMMENT '图片/文件字节数',
   PRIMARY KEY (`message_id`) USING BTREE,
   KEY `idx_thread_created` (`thread_id`,`created_at`) USING BTREE,
   KEY `idx_thread_message` (`thread_id`,`message_id`) USING BTREE
@@ -136,6 +137,17 @@ CREATE TABLE `chat_message_deleted` (
   `uid` int NOT NULL,
   PRIMARY KEY (`message_id`,`uid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ROW_FORMAT=DYNAMIC;
+
+-- 文件秒传索引：md5 → 服务器物理文件（Redis 只是缓存，这张表是最终真相）
+DROP TABLE IF EXISTS `file_object`;
+CREATE TABLE `file_object` (
+  `md5` char(32) NOT NULL,
+  `file_size` bigint NOT NULL DEFAULT '0',
+  `file_path` varchar(512) NOT NULL COMMENT '相对 output/static 的路径，如 1002/xxx.jpg',
+  `ref_count` int NOT NULL DEFAULT '1' COMMENT '被多少条消息引用（后续清理用）',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`md5`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- 初始数据 + 注册存储过程
