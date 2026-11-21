@@ -50,8 +50,9 @@ LogicWorker::LogicWorker() :_b_stop(false)
 			}
 
 			auto task = _task_que.front();
-			task_callback(task);
 			_task_que.pop();
+			lock.unlock();
+			task_callback(task);
 		}
 
 	});
@@ -59,7 +60,10 @@ LogicWorker::LogicWorker() :_b_stop(false)
 
 LogicWorker::~LogicWorker()
 {
-	_b_stop = true;
+	{
+		std::lock_guard<std::mutex> lock(_mtx);
+		_b_stop = true;
+	}
 	_cv.notify_one();
 	_work_thread.join();
 }

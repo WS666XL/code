@@ -2,12 +2,21 @@
 #include "const.h"
 #include "Logger.h"
 #include <thread>
+#if __has_include(<jdbc/mysql_driver.h>)
 #include <jdbc/mysql_driver.h>
 #include <jdbc/mysql_connection.h>
 #include <jdbc/cppconn/prepared_statement.h>
 #include <jdbc/cppconn/resultset.h>
 #include <jdbc/cppconn/statement.h>
 #include <jdbc/cppconn/exception.h>
+#else
+#include <mysql_driver.h>
+#include <mysql_connection.h>
+#include <cppconn/prepared_statement.h>
+#include <cppconn/resultset.h>
+#include <cppconn/statement.h>
+#include <cppconn/exception.h>
+#endif
 #include "data.h"
 #include <memory>
 #include <queue>
@@ -113,8 +122,10 @@ public:
 		// 不清理的话，autocommit=0 的连接回池后被普通写操作借走，行锁永远无人提交释放，
 		// 连接带锁挂起 → MySQL 死锁（只能重启服务端释放）。
 		try {
-			con->_con->rollback();
-			con->_con->setAutoCommit(true);
+			if (!con->_con->getAutoCommit()) {
+				con->_con->rollback();
+				con->_con->setAutoCommit(true);
+			}
 		}
 		catch (...) {
 			// 连接可能已损坏，忽略；仍归还以保持池大小（与原逻辑一致）

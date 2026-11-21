@@ -4,7 +4,8 @@
 #       ./start_servers.sh stop     停掉四个服务
 # 说明: 用 setsid + nohup 双重脱离终端，关掉终端窗口服务也不会退
 
-BUILD=/home/xulei/cpp/testllfc/build
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BUILD="$SCRIPT_DIR/build"
 
 start_one() {
     local dir=$1 bin=$2 log=$3

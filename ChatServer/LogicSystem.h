@@ -11,9 +11,11 @@
 #include <json/value.h>
 #include <json/reader.h>
 #include <unordered_map>
+#include <vector>
 #include "data.h"
-#include<mutex>
-//后期可以增加多个处理不同逻辑的队列，现在是一个线程来处理一个队列
+#include <mutex>
+#include <condition_variable>
+// 按 session_id 哈希分片的多 Worker 逻辑线程池：保证同一连接消息严格保序，同时多连接并发执行 MySQL/Redis/gRPC
 typedef  function<void(shared_ptr<CSession>, const short &msg_id, const string &msg_data)> FunCallBack;
 class LogicSystem:public Singleton<LogicSystem>
 {
@@ -24,8 +26,14 @@ public:
 	// 注册 CServer 指针：踢人时需要通过它清除旧 session
 	void SetServer(std::shared_ptr<CServer> pserver);
 private:
+	struct WorkerShard {
+		std::mutex mutex;
+		std::condition_variable consume;
+		std::queue<shared_ptr<LogicNode>> msg_que;
+		std::thread worker_thread;
+	};
 	LogicSystem();
-	void DealMsg();
+	void DealMsg(std::size_t shard_idx);
 	void RegisterCallBacks();
 	void LoginHandler(shared_ptr<CSession>session, const short &msg_id, const string &msg_data);
 	void SearchInfo(shared_ptr<CSession>session, const short& msg_id, const string& msg_data);
@@ -65,10 +73,7 @@ private:
 	bool GetFriendApplyInfo(int to_uid, std::vector<std::shared_ptr<ApplyInfo>>& list);
 	bool GetFriendList(int self_id, std::vector<std::shared_ptr<UserInfo>>& user_list);
 	
-	std::thread _worker_thread;
-	std::queue<shared_ptr<LogicNode>> _msg_que;
-	std::mutex _mutex;
-	std::condition_variable _consume;
+	std::vector<std::unique_ptr<WorkerShard>> _shards;
 	bool _b_stop;
 	std::map<short, FunCallBack> _fun_callbacks;
 	std::unordered_map<int, std::shared_ptr<UserInfo>> _users;

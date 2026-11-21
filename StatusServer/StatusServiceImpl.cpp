@@ -14,7 +14,7 @@ std::string generate_unique_string() {
 
 Status StatusServiceImpl::GetChatServer(ServerContext* context, const GetChatServerReq* request, GetChatServerRsp* reply)
 {
-	std::string prefix("llfc status server has received :  ");
+	std::string prefix("qingxun status server has received :  ");
 	const auto& server = getChatServer();
 	reply->set_host(server.host);
 	reply->set_port(server.port);
@@ -52,41 +52,28 @@ StatusServiceImpl::StatusServiceImpl()
 }
 
 ChatServer StatusServiceImpl::getChatServer() {
-	std::lock_guard<std::mutex> guard(_server_mtx);
-	auto minServer = _servers.begin()->second;
-	auto count_str = RedisMgr::GetInstance()->HGet(LOGIN_COUNT, minServer.name);
-	if (count_str.empty()) {
-		//不存在则默认设置为最大
-		minServer.con_count = INT_MAX;
-		/*minServer.con_count = 0;
-		auto count_str1 = std::to_string(minServer.con_count);
-		RedisMgr::GetInstance()->HSet(LOGIN_COUNT, minServer.name, count_str1);*/
-	}
-	else {
-		minServer.con_count = std::stoi(count_str);
-	}
-
-
-	// 使用范围基于for循环
-	for (auto& server : _servers) {
-
-		if (server.second.name == minServer.name) {
-			continue;
+	// 锁内仅拷贝服务列表快照，锁外并发查询 Redis，避免多路 gRPC 登录请求在互斥锁上串行排队
+	std::vector<ChatServer> candidates;
+	{
+		std::lock_guard<std::mutex> guard(_server_mtx);
+		candidates.reserve(_servers.size());
+		for (const auto& kv : _servers) {
+			candidates.push_back(kv.second);
 		}
+	}
 
-		auto count_str = RedisMgr::GetInstance()->HGet(LOGIN_COUNT, server.second.name);
+	ChatServer minServer = candidates.front();
+	minServer.con_count = INT_MAX;
+	for (auto& server : candidates) {
+		auto count_str = RedisMgr::GetInstance()->HGet(LOGIN_COUNT, server.name);
 		if (count_str.empty()) {
-			server.second.con_count = INT_MAX;
-			/*server.second.con_count = 0;
-			auto count_str2 = std::to_string(server.second.con_count);
-			RedisMgr::GetInstance()->HSet(LOGIN_COUNT, server.second.name, count_str2);*/
+			server.con_count = INT_MAX;
 		}
 		else {
-			server.second.con_count = std::stoi(count_str);
+			server.con_count = std::stoi(count_str);
 		}
-
-		if (server.second.con_count < minServer.con_count) {
-			minServer = server.second;
+		if (server.con_count < minServer.con_count) {
+			minServer = server;
 		}
 	}
 

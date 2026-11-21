@@ -9,7 +9,7 @@ MysqlDao::MysqlDao()
     const auto& pwd = cfg["Mysql"]["Passwd"];
     const auto& schema = cfg["Mysql"]["Schema"];
     const auto& user = cfg["Mysql"]["User"];
-    pool_.reset(new MySqlPool(host + ":" + port, user, pwd, schema, 5));
+    pool_.reset(new MySqlPool(host + ":" + port, user, pwd, schema, 16));
 }
 
 MysqlDao::~MysqlDao() {
@@ -165,11 +165,13 @@ int MysqlDao::RegUserTransaction(const std::string& name, const std::string& ema
 
 bool MysqlDao::CheckEmail(const std::string& name, const std::string& email) {
 	auto con = pool_->getConnection();
+	if (con == nullptr) {
+		return false;
+	}
+	Defer defer([this, &con]() {
+		pool_->returnConnection(std::move(con));
+		});
 	try {
-		if (con == nullptr) {
-			return false;
-		}
-
 		// 准备查询语句
 		std::unique_ptr<sql::PreparedStatement> pstmt(con->_con->prepareStatement("SELECT email FROM user WHERE name = ?"));
 
@@ -183,16 +185,13 @@ bool MysqlDao::CheckEmail(const std::string& name, const std::string& email) {
 		while (res->next()) {
 			LLOG_INFO << "Check Email: " << res->getString("email") << std::endl;
 			if (email != res->getString("email")) {
-				pool_->returnConnection(std::move(con));
 				return false;
 			}
-			pool_->returnConnection(std::move(con));
 			return true;
 		}
-		return true;
+		return false;
 	}
 	catch (sql::SQLException& e) {
-		pool_->returnConnection(std::move(con));
 		LLOG_ERROR << "SQLException: " << e.what();
 		LLOG_ERROR << " (MySQL error code: " << e.getErrorCode();
 		LLOG_ERROR << ", SQLState: " << e.getSQLState() << " )" << std::endl;
@@ -250,8 +249,6 @@ bool MysqlDao::CheckPwd(const std::string& email, const std::string& pwd, UserIn
 		// 遍历结果集
 		while (res->next()) {
 			origin_pwd = res->getString("pwd");
-			// 输出查询到的密码
-			LLOG_INFO << "Password: " << origin_pwd << std::endl;
 			break;
 		}
 

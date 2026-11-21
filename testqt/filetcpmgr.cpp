@@ -1115,14 +1115,14 @@ void FileTcpMgr::RememberSavedPath(const QString& uniqueName, const QString& pat
     settings.sync();
 }
 
-// 用户可见的下载目录：<系统下载目录>/llfcchat
+// 用户可见的下载目录：<系统下载目录>/qingxun
 QString FileTcpMgr::ResolveDownloadDir() const
 {
     QString base = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
     if (base.isEmpty()) {
         base = QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/Downloads";
     }
-    QString dir_path = base + "/llfcchat";
+    QString dir_path = base + "/qingxun";
     QDir dir(dir_path);
     if (!dir.exists() && !dir.mkpath(".")) {
         return QString();

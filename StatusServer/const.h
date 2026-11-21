@@ -11,12 +11,21 @@
 #include "Singleton.h"
 #include <assert.h>
 #include <queue>
+#if __has_include(<jdbc/mysql_driver.h>)
 #include <jdbc/mysql_driver.h>
 #include <jdbc/mysql_connection.h>
 #include <jdbc/cppconn/prepared_statement.h>
 #include <jdbc/cppconn/resultset.h>
 #include <jdbc/cppconn/statement.h>
 #include <jdbc/cppconn/exception.h>
+#else
+#include <mysql_driver.h>
+#include <mysql_connection.h>
+#include <cppconn/prepared_statement.h>
+#include <cppconn/resultset.h>
+#include <cppconn/statement.h>
+#include <cppconn/exception.h>
+#endif
 #include <iostream>
 #include <functional>
 #include <boost/uuid/uuid.hpp>

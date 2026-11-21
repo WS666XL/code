@@ -62,15 +62,16 @@ void CServer::StartAccept() {
 }
 
 void CServer::ClearSession(std::string sessions_id) {
-
-	if (_sessions.find(sessions_id) != _sessions.end()) {
-		
-		UserMgr::GetInstance()->RmvUserSession(_sessions[sessions_id]->GetUserId());
-	}
-
+	int uid = 0;
 	{
 		lock_guard<mutex> lock(_mutex);
-		_sessions.erase(sessions_id);
+		auto it = _sessions.find(sessions_id);
+		if (it != _sessions.end()) {
+			uid = it->second->GetUserId();
+			_sessions.erase(it);
+		}
 	}
-
+	if (uid > 0) {
+		UserMgr::GetInstance()->RmvUserSession(uid);
+	}
 }

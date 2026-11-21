@@ -45,6 +45,10 @@ ChatPage::ChatPage(QWidget *parent)
     //设置按钮样式
     ui->send_btn->SetState("normal","hover","press");
 
+    // 回车发送：MessageTextEdit 在 keyPressEvent 中拦截回车发出 send() 信号，
+    // 这里通过信号与槽接到发送按钮的槽函数（Shift+Enter / Ctrl+Enter 仍可换行）
+    connect(ui->chatEdit, &MessageTextEdit::send, this, &ChatPage::on_send_btn_clicked);
+
     //设置图标样式
     ui->emo_lb->SetState("normal","hover","press","normal","hover","press");
     ui->file_lb->SetState("normal","hover","press","normal","hover","press");
@@ -850,7 +854,7 @@ void ChatPage::AppendChatMsg(std::shared_ptr<ChatDataBase> msg, bool rsp)
                 [this, file_bubble, msg_info, sender_uid]() {
                     _download_bubbles[msg_info->_unique_name] = file_bubble;
                     _download_done_map[msg_info->_unique_name] = [file_bubble, msg_info, sender_uid]() {
-                        // 下载完成后优先按索引找：文件实际保存在“下载/llfcchat/原始名”
+                        // 下载完成后优先按索引找：文件实际保存在“下载/qingxun/原始名”
                         QString local_path = FileTcpMgr::GetInstance()->LookupSavedPath(
                             msg_info->_unique_name);
                         if (local_path.isEmpty()) {

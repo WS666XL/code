@@ -79,10 +79,11 @@ void CSession::AsyncReadHead(int total_len)
 			memcpy(&msg_id, _recv_head_node->_data, HEAD_ID_LEN);
 			//网络字节序转化为本地字节序
 			msg_id = boost::asio::detail::socket_ops::network_to_host_short(msg_id);
-			LLOG_INFO << "msg_id is " << msg_id << endl;
+			LLOG_DEBUG << "msg_id is " << msg_id << endl;
 			//id非法
-			if (msg_id > MAX_LENGTH) {
+			if (msg_id < 0 || msg_id > MAX_LENGTH) {
 				LLOG_INFO << "invalid msg_id is " << msg_id << endl;
+				Close();
 				_server->ClearSession(_session_id);
 				return;
 			}
@@ -90,11 +91,12 @@ void CSession::AsyncReadHead(int total_len)
 			memcpy(&msg_len, _recv_head_node->_data + HEAD_ID_LEN, HEAD_DATA_LEN);
 			//网络字节序转化为本地字节序
 			msg_len = boost::asio::detail::socket_ops::network_to_host_short(msg_len);
-			LLOG_INFO << "msg_len is " << msg_len << endl;
+			LLOG_DEBUG << "msg_len is " << msg_len << endl;
 
-			//id非法
-			if (msg_len > MAX_LENGTH) {
+			//长度非法
+			if (msg_len < 0 || msg_len > MAX_LENGTH) {
 				LLOG_INFO << "invalid data length is " << msg_len << endl;
+				Close();
 				_server->ClearSession(_session_id);
 				return;
 			}
@@ -174,7 +176,7 @@ void CSession::AsyncReadBody(int total_len)
 			memcpy(_recv_msg_node->_data , _data , bytes_transfered);
 			_recv_msg_node->_cur_len += bytes_transfered;
 			_recv_msg_node->_data[_recv_msg_node->_total_len] = '\0';
-			LLOG_INFO << "receive data is " << _recv_msg_node->_data << endl;
+			LLOG_DEBUG << "receive data is " << _recv_msg_node->_data << endl;
 			//此处将消息投递到逻辑队列中
 			LogicSystem::GetInstance()->PostMsgToQue(make_shared<LogicNode>(shared_from_this(), _recv_msg_node));
 			//继续监听头部接受事件

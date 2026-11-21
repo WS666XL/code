@@ -16,7 +16,7 @@ public:
 	}
 
 	~MsgNode() {
-		LLOG_INFO << "destruct MsgNode" << endl;
+		LLOG_DEBUG << "destruct MsgNode" << endl;
 		delete[] _data;
 	}
 

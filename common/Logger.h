@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <memory>
@@ -76,8 +77,9 @@ public:
             auto logger = std::make_shared<spdlog::logger>(
                 name, sinks.begin(), sinks.end());
             logger->set_level(ParseLevel(use_level));
-            // 每条日志都落盘：客户端崩溃时最容易丢的就是最后几条现场日志
-            logger->flush_on(spdlog::level::trace);
+            // 告警/错误日志立即落盘，避免崩溃丢现场；普通 INFO/DEBUG 每秒批量刷盘，避免高并发同步 fflush 瓶颈
+            logger->flush_on(spdlog::level::warn);
+            spdlog::flush_every(std::chrono::seconds(1));
             spdlog::set_default_logger(logger);
 
             // 日志库内部错误（比如磁盘满）不要抛异常打断业务
@@ -131,9 +133,14 @@ class LogLine {
 public:
     LogLine(spdlog::level::level_enum level, const char* file, int line)
         : _level(level), _loc{ file, line, nullptr } {
+        auto* logger = spdlog::default_logger_raw();
+        _enabled = (logger != nullptr && logger->should_log(_level));
     }
 
     ~LogLine() {
+        if (!_enabled) {
+            return;
+        }
         auto* logger = spdlog::default_logger_raw();
         if (!logger || !logger->should_log(_level)) {
             return;
@@ -153,12 +160,18 @@ public:
 
     template <typename T>
     LogLine& operator<<(const T& value) {
+        if (!_enabled) {
+            return *this;
+        }
         _stream << value;
         return *this;
     }
 
     // 支持 std::endl / Qt::endl 这类函数指针
     LogLine& operator<<(std::ostream& (*fn)(std::ostream&)) {
+        if (!_enabled) {
+            return *this;
+        }
         if (fn) {
             fn(_stream);
         }
@@ -167,35 +180,43 @@ public:
 
 #ifdef QT_CORE_LIB
     LogLine& operator<<(const QString& value) {
+        if (!_enabled) return *this;
         _stream << value.toStdString();
         return *this;
     }
     LogLine& operator<<(const QByteArray& value) {
+        if (!_enabled) return *this;
         _stream << value.constData();
         return *this;
     }
     LogLine& operator<<(const QSize& value) {
+        if (!_enabled) return *this;
         _stream << value.width() << "x" << value.height();
         return *this;
     }
     LogLine& operator<<(const QPoint& value) {
+        if (!_enabled) return *this;
         _stream << "(" << value.x() << "," << value.y() << ")";
         return *this;
     }
     LogLine& operator<<(const QRect& value) {
+        if (!_enabled) return *this;
         _stream << "(" << value.x() << "," << value.y() << " "
                 << value.width() << "x" << value.height() << ")";
         return *this;
     }
     LogLine& operator<<(const QJsonObject& value) {
+        if (!_enabled) return *this;
         _stream << QJsonDocument(value).toJson(QJsonDocument::Compact).toStdString();
         return *this;
     }
     LogLine& operator<<(const QJsonArray& value) {
+        if (!_enabled) return *this;
         _stream << QJsonDocument(value).toJson(QJsonDocument::Compact).toStdString();
         return *this;
     }
     LogLine& operator<<(const QJsonValue& value) {
+        if (!_enabled) return *this;
         if (value.isObject()) {
             return *this << value.toObject();
         }
@@ -214,6 +235,7 @@ public:
         return *this;
     }
     LogLine& operator<<(const QJsonDocument& value) {
+        if (!_enabled) return *this;
         _stream << value.toJson(QJsonDocument::Compact).toStdString();
         return *this;
     }
@@ -222,6 +244,7 @@ public:
 private:
     spdlog::level::level_enum _level;
     spdlog::source_loc _loc;
+    bool _enabled = false;
     std::ostringstream _stream;
 };
 

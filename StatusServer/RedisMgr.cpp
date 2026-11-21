@@ -7,7 +7,7 @@ RedisMgr::RedisMgr() {
 	auto host = gCfgMgr["Redis"]["Host"];
 	auto port = gCfgMgr["Redis"]["Port"];
 	auto pwd = gCfgMgr["Redis"]["Passwd"];
-	_con_pool.reset(new RedisConPool(5, host.c_str(), atoi(port.c_str()), pwd.c_str()));
+	_con_pool.reset(new RedisConPool(16, host.c_str(), atoi(port.c_str()), pwd.c_str()));
 }
 
 RedisMgr::~RedisMgr() {
@@ -40,7 +40,7 @@ bool RedisMgr::Get(const std::string& key, std::string& value)
 	value = reply->str;
 	freeReplyObject(reply);
 
-	LLOG_INFO << "Succeed to execute command [ GET " << key << "  ]" << std::endl;
+	LLOG_DEBUG << "Succeed to execute command [ GET " << key << "  ]" << std::endl;
 	_con_pool->returnConnection(connect);
 	return true;
 }
@@ -73,7 +73,7 @@ bool RedisMgr::Set(const std::string& key, const std::string& value) {
 
 	//执行成功 释放redisCommand执行后返回的redisReply所占用的内存
 	freeReplyObject(reply);
-	LLOG_INFO << "Execut command [ SET " << key << "  " << value << " ] success ! " << std::endl;
+	LLOG_DEBUG << "Execut command [ SET " << key << "  " << value << " ] success ! " << std::endl;
 	_con_pool->returnConnection(connect);
 	return true;
 }
@@ -276,7 +276,7 @@ std::string RedisMgr::HGet(const std::string& key, const std::string& hkey)
 	std::string value = reply->str;
 	freeReplyObject(reply);
 	_con_pool->returnConnection(connect);
-	LLOG_INFO << "Execut command [ HGet " << key << " " << hkey << " ] success ! " << std::endl;
+	LLOG_DEBUG << "Execut command [ HGet " << key << " " << hkey << " ] success ! " << std::endl;
 	return value;
 }
 

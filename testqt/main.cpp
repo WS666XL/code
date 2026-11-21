@@ -9,6 +9,8 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);          // 每个 Qt GUI 程序都必须有一个 QApplication
+    a.setApplicationName("qingxun");
+    a.setApplicationDisplayName(QStringLiteral("轻讯"));
     // 日志：控制台 + <程序目录>/logs/client.log
     xulei::Logger::Init("client",
         (QCoreApplication::applicationDirPath() + "/logs").toStdString(), "debug");
@@ -29,7 +31,7 @@ int main(int argc, char *argv[])
     // ===== 读取 config.ini，拼出后端服务器地址前缀 =====
     // 获取当前应用程序的路径
     // (注意：拿到的是 exe 所在目录，所以 config.ini 必须和 exe 放在一起
-    //  —— 这也是 llfcchat.pro 里要用 QMAKE_POST_LINK 把它拷过去的原因)
+    //  —— 这也是 qingxun.pro 里要用 QMAKE_POST_LINK 把它拷过去的原因)
     QString app_path = QCoreApplication::applicationDirPath();
     // 拼接文件名
     QString fileName = "config.ini";

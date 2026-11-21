@@ -82,7 +82,7 @@ public:
     void DownloadChatImage(const QString& imgName, int senderUid);
     // 下载聊天文件（day41：与图片同一条 1033 通道）：
     // 临时文件放 AppData/.../chatfile/<sender>/<unique_name>.tmp 保证断点续传，
-    // 下载完成后另存为“下载/llfcchat/原始文件名”，并记录本地路径索引
+    // 下载完成后另存为“下载/qingxun/原始文件名”，并记录本地路径索引
     void DownloadChatFile(const QString& fileName, int senderUid,
                           const QString& originalName = QString());
     // 已下载文件的本地路径（unique_name → 实际保存路径）。
@@ -175,7 +175,7 @@ private:
     // AppData/<uid>/file_index.ini：unique_name → 下载后的实际路径
     QString FileIndexPath() const;
     void RememberSavedPath(const QString& uniqueName, const QString& path);
-    // 中文"下载"目录下的 llfcchat 子目录；目录不存在会自动创建
+    // 中文"下载"目录下的 qingxun 子目录；目录不存在会自动创建
     QString ResolveDownloadDir() const;
     // 同名文件自动加 (1)(2)，避免覆盖用户已有文件
     QString MakeUniqueFinalPath(const QString& dir, const QString& fileName) const;

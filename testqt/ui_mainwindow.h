@@ -106,8 +106,8 @@ public:
 
     void retranslateUi(QMainWindow *MainWindow)
     {
-        MainWindow->setWindowTitle(QCoreApplication::translate("MainWindow", "xulei666", nullptr));
-        title_text->setText(QCoreApplication::translate("MainWindow", "xulei666", nullptr));
+        MainWindow->setWindowTitle(QCoreApplication::translate("MainWindow", "\350\275\273\350\256\257", nullptr));
+        title_text->setText(QCoreApplication::translate("MainWindow", "\350\275\273\350\256\257", nullptr));
         btn_min->setText(QCoreApplication::translate("MainWindow", "\342\224\200", nullptr));
         btn_max->setText(QCoreApplication::translate("MainWindow", "\342\226\241", nullptr));
         btn_close->setText(QCoreApplication::translate("MainWindow", "\342\234\225", nullptr));

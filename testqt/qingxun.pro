@@ -11,7 +11,8 @@ INCLUDEPATH += $$PWD/../common
 # spdlog 依赖系统 fmt 库
 LIBS += -lfmt
 
-# 生成的 exe 使用的图标，以及可执行文件的输出目录
+# 生成的可执行文件名、图标与输出目录
+TARGET = qingxun
 RC_ICONS = icon.ico
 DESTDIR = ./bin
 

@@ -10,7 +10,7 @@
 #   - jsoncpp / mysqlcppconn (用户级前缀，见 USER_PREFIX)
 
 cmake_minimum_required(VERSION 3.16)
-project(llfc_code_linux CXX)
+project(qingxun_im CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

@@ -11,7 +11,7 @@ class QNetworkReply;
  *  文件：aiclient.h
  *  作用：客户端直连百炼（DashScope）大模型
  *  说明：
- *    - API Key 只保存在本机 AppData/llfcchat/ai.ini，不进代码、不进仓库
+ *    - API Key 只保存在本机 AppData/qingxun/ai.ini，不进代码、不进仓库
  *    - 请求走 OpenAI 兼容接口，一次只处理一条，避免并发打爆额度
  *    - 不保存聊天记录，回答只进当前会话的本地缓存
  *****************************************************************************/

@@ -81,6 +81,12 @@ void CSession::AsyncReadHead(int total_len)
 			//网络字节序转化为本地字节序
 			msg_id = boost::asio::detail::socket_ops::network_to_host_short(msg_id);
 			LLOG_INFO << "msg_id is " << msg_id << endl;
+			if (msg_id < 0) {
+				LLOG_INFO << "invalid msg_id is " << msg_id << endl;
+				Close();
+				_server->ClearSession(_session_id);
+				return;
+			}
 
 			//获取头部数据长度（4 字节：文件分块包体较大）
 			int msg_len = 0;
@@ -89,9 +95,10 @@ void CSession::AsyncReadHead(int total_len)
 			msg_len = boost::asio::detail::socket_ops::network_to_host_long(msg_len);
 			LLOG_INFO << "msg_len is " << msg_len << endl;
 
-			//长度非法直接断开，防止恶意超大包
-			if (msg_len > MAX_LENGTH) {
+			//长度非法直接断开，防止恶意负数或超大包
+			if (msg_len < 0 || msg_len > MAX_LENGTH) {
 				LLOG_INFO << "invalid data length is " << msg_len << endl;
+				Close();
 				_server->ClearSession(_session_id);
 				return;
 			}

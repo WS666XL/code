@@ -85,10 +85,20 @@ void MessageTextEdit::dropEvent(QDropEvent *event)
 
 void MessageTextEdit::keyPressEvent(QKeyEvent *e)
 {
-    if((e->key()==Qt::Key_Enter||e->key()==Qt::Key_Return)&& !(e->modifiers() & Qt::ShiftModifier))
+    if (e->key() == Qt::Key_Enter || e->key() == Qt::Key_Return)
     {
-        emit send();
-        return;
+        // Ctrl+Enter 手动换行（QTextEdit 默认不把 Ctrl+Enter 当换行）
+        if (e->modifiers() & Qt::ControlModifier) {
+            textCursor().insertBlock();
+            e->accept();
+            return;
+        }
+        // 单按 Enter / 小键盘 Enter：截断事件并发出 send() 信号
+        if (!(e->modifiers() & Qt::ShiftModifier)) {
+            e->accept();
+            emit send();
+            return;
+        }
     }
     QTextEdit::keyPressEvent(e);
 }

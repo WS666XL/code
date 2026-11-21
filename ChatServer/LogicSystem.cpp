@@ -8,11 +8,20 @@
 #include"ChatGrpcClient.h"
 #include"CServer.h"
 #include"utils.h"
+#include <algorithm>
 using namespace std;
 
 LogicSystem::LogicSystem():_b_stop(false), _p_server(nullptr){
 	RegisterCallBacks();
-	_worker_thread = std::thread (&LogicSystem::DealMsg, this);
+	const std::size_t worker_count = std::max<std::size_t>(4, std::thread::hardware_concurrency());
+	_shards.reserve(worker_count);
+	for (std::size_t i = 0; i < worker_count; ++i) {
+		_shards.push_back(std::make_unique<WorkerShard>());
+	}
+	for (std::size_t i = 0; i < worker_count; ++i) {
+		_shards[i]->worker_thread = std::thread(&LogicSystem::DealMsg, this, i);
+	}
+	LLOG_INFO << "LogicSystem started with " << worker_count << " sharded worker threads";
 }
 
 // main 里把 CServer 智能指针传进来，踢人时用它清除旧 session
@@ -21,58 +30,75 @@ void LogicSystem::SetServer(std::shared_ptr<CServer> pserver) {
 }
 
 LogicSystem::~LogicSystem(){
-	_b_stop = true;
-	_consume.notify_one();
-	_worker_thread.join();
-}
-
-void LogicSystem::PostMsgToQue(shared_ptr <LogicNode> msg) {
-	std::unique_lock<std::mutex> unique_lk(_mutex);
-	_msg_que.push(msg);
-	//由0变为1则发送通知信号
-	if (_msg_que.size() == 1) {
-		unique_lk.unlock();
-		_consume.notify_one();
+	for (auto& shard : _shards) {
+		std::lock_guard<std::mutex> lk(shard->mutex);
+		_b_stop = true;
+		shard->consume.notify_one();
+	}
+	for (auto& shard : _shards) {
+		if (shard->worker_thread.joinable()) {
+			shard->worker_thread.join();
+		}
 	}
 }
 
-void LogicSystem::DealMsg() {
+void LogicSystem::PostMsgToQue(shared_ptr <LogicNode> msg) {
+	// 按 session_id 哈希路由到固定分片：单连接内消息严格保序，多连接跨分片并行
+	std::size_t shard_idx = 0;
+	if (msg && msg->_session) {
+		shard_idx = std::hash<std::string>{}(msg->_session->GetSessionId()) % _shards.size();
+	}
+	auto& shard = *_shards[shard_idx];
+	std::unique_lock<std::mutex> unique_lk(shard.mutex);
+	shard.msg_que.push(msg);
+	//由0变为1则发送通知信号
+	if (shard.msg_que.size() == 1) {
+		unique_lk.unlock();
+		shard.consume.notify_one();
+	}
+}
+
+void LogicSystem::DealMsg(std::size_t shard_idx) {
+	auto& shard = *_shards[shard_idx];
 	for (;;) {
-		std::unique_lock<std::mutex> unique_lk(_mutex);
+		std::unique_lock<std::mutex> unique_lk(shard.mutex);
 		//判断队列为空则用条件变量阻塞等待，并释放锁
-		while (_msg_que.empty() && !_b_stop) {
-			_consume.wait(unique_lk);
+		while (shard.msg_que.empty() && !_b_stop) {
+			shard.consume.wait(unique_lk);
 		}
 
-		//判断是否为关闭状态，把所有逻辑执行完后则退出循环
+		//判断是否为关闭状态，把剩余队列整体换出后解锁再执行，避免持锁执行业务
 		if (_b_stop ) {
-			while (!_msg_que.empty()) {
-				auto msg_node = _msg_que.front();
-				LLOG_INFO << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
+			std::queue<shared_ptr<LogicNode>> pending;
+			pending.swap(shard.msg_que);
+			unique_lk.unlock();
+			while (!pending.empty()) {
+				auto msg_node = pending.front();
+				pending.pop();
+				LLOG_DEBUG << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
 				auto call_back_iter = _fun_callbacks.find(msg_node->_recvnode->_msg_id);
 				if (call_back_iter == _fun_callbacks.end()) {
-					_msg_que.pop();
 					continue;
 				}
 				call_back_iter->second(msg_node->_session, msg_node->_recvnode->_msg_id,
 					std::string(msg_node->_recvnode->_data, msg_node->_recvnode->_total_len));//改成_total_len
-				_msg_que.pop();
 			}
 			break;
 		}
 
-		//如果没有停服，且说明队列中有数据
-		auto msg_node = _msg_que.front();
-		LLOG_INFO << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
+		//如果没有停服，且说明队列中有数据：取出并弹出后立刻解锁，避免持锁执行同步 I/O 阻塞 IO 线程入队
+		auto msg_node = shard.msg_que.front();
+		shard.msg_que.pop();
+		unique_lk.unlock();
+
+		LLOG_DEBUG << "recv_msg id  is " << msg_node->_recvnode->_msg_id << endl;
 		auto call_back_iter = _fun_callbacks.find(msg_node->_recvnode->_msg_id);
 		if (call_back_iter == _fun_callbacks.end()) {
-			_msg_que.pop();
-			LLOG_INFO << "msg id [" << msg_node->_recvnode->_msg_id << "] handler not found" << std::endl;
+			LLOG_WARN << "msg id [" << msg_node->_recvnode->_msg_id << "] handler not found" << std::endl;
 			continue;
 		}
 		call_back_iter->second(msg_node->_session, msg_node->_recvnode->_msg_id, 
 			std::string(msg_node->_recvnode->_data, msg_node->_recvnode->_total_len));//改成_total_len
-		_msg_que.pop();
 	}
 }
 
@@ -131,8 +157,8 @@ bool LogicSystem::GetBaseInfo(std::string base_key, int uid, std::shared_ptr<Use
 		userinfo->desc = root["desc"].asString();
 		userinfo->sex = root["sex"].asInt();
 		userinfo->icon = root["icon"].asString();
-		LLOG_INFO << "user login uid is  " << userinfo->uid << " name  is "
-			<< userinfo->name << " pwd is " << userinfo->pwd << " email is " << userinfo->email << endl;
+		LLOG_DEBUG << "user login uid is " << userinfo->uid << " name is "
+			<< userinfo->name << " email is " << userinfo->email << endl;
 	}
 	else {
 		//redis中没有则查询mysql
@@ -345,7 +371,7 @@ void LogicSystem::HeartBeatHandler(std::shared_ptr<CSession> session, const shor
 	Json::Value root;
 	reader.parse(msg_data, root);
 	auto uid = root["fromuid"].asInt();
-	LLOG_INFO << "receive heart beat msg, uid is " << uid << std::endl;
+	LLOG_DEBUG << "receive heart beat msg, uid is " << uid << std::endl;
 	Json::Value  rtvalue;
 	rtvalue["error"] = ErrorCodes::Success;
 	session->Send(rtvalue.toStyledString(), ID_HEARTBEAT_RSP);
@@ -857,8 +883,8 @@ void LogicSystem::DealChatTextMsg(std::shared_ptr<CSession> session, const short
 	for (const auto& txt_obj : arrays) {
 		auto content = txt_obj["content"].asString();
 		auto unique_id = txt_obj["unique_id"].asString();
-		LLOG_INFO << "content is " << content << std::endl;
-		LLOG_INFO << "unique_id is " << unique_id << std::endl;
+		LLOG_DEBUG << "content is " << content << std::endl;
+		LLOG_DEBUG << "unique_id is " << unique_id << std::endl;
 		auto chat_msg = std::make_shared<ChatMessage>();
 		chat_msg->chat_time = timestamp;
 		chat_msg->sender_id = uid;

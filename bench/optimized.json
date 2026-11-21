@@ -1,0 +1,78 @@
+{
+  "rss_before": {
+    "GateServer": 36.6,
+    "StatusServer": 18.6,
+    "ChatServer": 37.6,
+    "ChatServer2": 37.2,
+    "ResourceServer": 13.5
+  },
+  "rss_after": {
+    "GateServer": 36.7,
+    "StatusServer": 18.7,
+    "ChatServer": 37.8,
+    "ChatServer2": 37.6,
+    "ResourceServer": 13.5
+  },
+  "results": [
+    {
+      "name": "1. GateServer HTTP 登录 (concurrency=30)",
+      "total": 300,
+      "ok": 300,
+      "errors": 0,
+      "elapsed_s": 0.363,
+      "qps": 826.6,
+      "avg_ms": 34.14,
+      "p50_ms": 34.89,
+      "p95_ms": 47.48,
+      "p99_ms": 56.03,
+      "max_ms": 61.0
+    },
+    {
+      "name": "2. ChatServer TCP 长连接心跳 (conns=100, 50/conn)",
+      "total": 5000,
+      "ok": 5000,
+      "errors": 0,
+      "elapsed_s": 1.252,
+      "qps": 3995.0,
+      "avg_ms": 20.79,
+      "p50_ms": 22.22,
+      "p95_ms": 27.38,
+      "p99_ms": 29.37,
+      "max_ms": 30.57
+    },
+    {
+      "name": "3. ChatServer 同服私聊入库+推送 (pairs=20, 30 msgs/pair)",
+      "total": 600,
+      "ok": 600,
+      "errors": 0,
+      "elapsed_s": 2.403,
+      "qps": 249.7,
+      "avg_ms": 52.95,
+      "p50_ms": 49.2,
+      "p95_ms": 94.02,
+      "p99_ms": 100.87,
+      "max_ms": 103.54,
+      "delivered": 600,
+      "e2e_p50_ms": 48.75,
+      "e2e_p95_ms": 93.75,
+      "e2e_p99_ms": 100.79
+    },
+    {
+      "name": "4. ChatServer 跨服私聊 gRPC 转发 (pairs=10, 30 msgs/pair)",
+      "total": 300,
+      "ok": 300,
+      "errors": 0,
+      "elapsed_s": 1.92,
+      "qps": 156.2,
+      "avg_ms": 40.22,
+      "p50_ms": 37.22,
+      "p95_ms": 82.6,
+      "p99_ms": 89.01,
+      "max_ms": 101.83,
+      "delivered": 300,
+      "e2e_p50_ms": 35.98,
+      "e2e_p95_ms": 81.5,
+      "e2e_p99_ms": 88.18
+    }
+  ]
+}

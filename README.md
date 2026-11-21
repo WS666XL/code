@@ -1,10 +1,9 @@
-# llfc 即时通讯项目（Qt6 + C++ 分布式服务 · Linux/WSL 版）
+# 轻讯（QingXun）— Qt6 + C++ 分布式即时通讯系统（Linux/WSL 版）
 
-一个能真正跑起来的「微信风格」聊天项目：Qt6 桌面客户端 + 5 个 C++ 服务 + 1 个 Node 验证码服务，
-后台用 MySQL 存数据、Redis 存登录 token 和上传进度，服务之间用 gRPC 通信。
+一个能真正跑起来的「微信风格」分布式即时通讯项目：**Qt6 桌面客户端 + 5 个 C++ 微服务 + 1 个 Node 验证码服务**，
+后台用 MySQL 存持久化数据、Redis 存登录 token 与上传进度，服务之间用 gRPC 通信。
 
-本项目是在课程 `llfcchat`（day5 ~ day41）基础上继续自研补全的版本，
-额外做了文件/图片断点续传、好友备注、单侧删除好友、右键删除消息、图片预览等能力。
+支持好友/群聊、图片/文件分块断点续传、MD5 秒传持久化、好友备注、单侧删除好友、右键删除消息、图片预览与内置 AI 助手等完整能力。
 
 > 这篇 README 面向第一次接触这个项目的新手：
 > **不需要先看懂所有代码，按顺序照做就能把项目跑起来。**
@@ -76,7 +75,7 @@
 - 文本消息（支持 Unicode emoji）、图片消息、文件消息
 - 图片点击预览、另存为
 - 文件上传/下载**断点续传**、暂停/继续
-- 文件下载保存到系统「下载/llfcchat/原始文件名」，支持另存为、打开所在文件夹、上传失败重试
+- 文件下载保存到系统「下载/qingxun/原始文件名」，支持另存为、打开所在文件夹、上传失败重试
 - 相同文件二次发送走 **md5 秒传**：服务器已有就直接硬链接，不重复上传、不重复占磁盘
 - 秒传索引持久化到 MySQL `file_object` 表，Redis 重启也不会重复存文件
 - 聊天列表按「今天 / 昨天 / 更早」显示日期分隔条
@@ -134,18 +133,18 @@ mysql -uroot -p < sql/schema.sql
 然后创建一个供程序连接的数据库账号（和配置文件里的账号保持一致）：
 
 ```sql
-CREATE USER IF NOT EXISTS 'llfc'@'%' IDENTIFIED BY '123456';
-CREATE USER IF NOT EXISTS 'llfc'@'localhost' IDENTIFIED BY '123456';
-GRANT ALL PRIVILEGES ON test.* TO 'llfc'@'%';
-GRANT ALL PRIVILEGES ON test.* TO 'llfc'@'localhost';
+CREATE USER IF NOT EXISTS 'xulei'@'%' IDENTIFIED BY '123456';
+CREATE USER IF NOT EXISTS 'xulei'@'localhost' IDENTIFIED BY '123456';
+GRANT ALL PRIVILEGES ON test.* TO 'xulei'@'%';
+GRANT ALL PRIVILEGES ON test.* TO 'xulei'@'localhost';
 FLUSH PRIVILEGES;
 ```
 
-> 不想用 `llfc/123456` 也可以，但要同步修改下面所有 `config.ini` 里的 `[Mysql]`。
+> 不想用 `xulei/123456` 也可以，但要同步修改下面所有 `config.ini` 里的 `[Mysql]`。
 
 > AI 助手：初始化脚本会创建一个固定用户 `AI助手`（uid=900000）。
 > 客户端首次给 AI 发消息时会弹窗要求填写百炼 API Key，
-> Key 只保存在本机 `AppData/llfcchat/ai.ini`，不会进代码或仓库；
+> Key 只保存在本机 `AppData/qingxun/ai.ini`，不会进代码或仓库；
 > 也可以在 AI 聊天页右上角「...」里随时修改。
 
 ---
@@ -227,18 +226,18 @@ build/ResourceServer/ResourceServer
 
 ```bash
 cd testqt
-qmake6 llfcchat.pro
+qmake6 qingxun.pro
 make -j$(nproc)
 ```
 
-生成的可执行文件在 `testqt/bin/llfcchat`，
+生成的可执行文件在 `testqt/bin/qingxun`，
 `config.ini` 会自动复制到 `bin/` 目录（客户端从可执行文件所在目录读取配置）。
 
 启动：
 
 ```bash
 cd testqt
-./bin/llfcchat
+./bin/qingxun
 ```
 
 想模拟两个人聊天：**把这个程序再启动一次**，登录另一个账号即可。
@@ -290,7 +289,7 @@ port 9090: OK     # ResourceServer TCP
 
 ```bash
 cd testqt
-./bin/llfcchat
+./bin/qingxun
 ```
 
 ---
@@ -472,20 +471,19 @@ ResourceServer 的文件协议是 **6 字节包头**（2 字节消息 ID + 4 字
 ## 14. 目录结构
 
 ```text
-testllfc/
+qingxun/
 ├── ChatServer/         聊天主服务（消息、好友、群聊、历史记录）
 ├── ChatServer2/        第二个聊天节点（只放配置，复用 ChatServer 源码）
 ├── GateServer/         HTTP 网关（注册/登录/验证码/重置密码）
 ├── StatusServer/       聊天节点分配 + token 发放
 ├── ResourceServer/     头像/图片/文件上传下载、断点续传
 ├── VarifyServer/       Node.js gRPC 邮箱验证码服务
-├── testqt/             Qt6 客户端（qmake 工程 llfcchat.pro）
+├── testqt/             Qt6 客户端（qmake 工程 qingxun.pro）
 ├── common/Logger.h     服务端/客户端共用的统一日志
 ├── sql/schema.sql      数据库初始化脚本
 ├── CMakeLists.txt      服务端总构建脚本
 ├── start_servers.sh    一键启动/停止 5 个 C++ 服务
-├── testfile/           独立的小测试程序（可忽略）
-└── llfcchat/           老师原版参考代码（已被 .gitignore 忽略，不在仓库里）
+└── testfile/           独立的小测试程序（可忽略）
 ```
 
 ---

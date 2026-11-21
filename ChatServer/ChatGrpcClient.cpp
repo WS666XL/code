@@ -21,15 +21,15 @@ ChatGrpcClient::ChatGrpcClient()
 		if(word.empty()) {
 			continue;
 		}
-		_pools[config[word]["Name"]] = std::make_unique<ChatConPool>(5,config[word]["Host"],config[word]["Port"]);
+		_pools[config[word]["Name"]] = std::make_unique<ChatConPool>(16,config[word]["Host"],config[word]["Port"]);
 	}
 
 }
 AddFriendRsp ChatGrpcClient::NotifyAddFriend(std::string server_ip, const AddFriendReq& req)
 {
 	AddFriendRsp rsp;
+	rsp.set_error(ErrorCodes::Success);
 	Defer defer([&rsp, &req]() {
-		rsp.set_error(ErrorCodes::Success);
 		rsp.set_applyuid(req.applyuid());
 		rsp.set_touid(req.touid());
 		});
@@ -42,10 +42,14 @@ AddFriendRsp ChatGrpcClient::NotifyAddFriend(std::string server_ip, const AddFri
 	auto& pool = find_iter->second;
 	ClientContext context;
 	auto stub = pool->getConnection();
-	Status status = stub->NotifyAddFriend(&context, req, &rsp);
+	if (!stub) {
+		rsp.set_error(ErrorCodes::RPCFailed);
+		return rsp;
+	}
 	Defer defercon([&stub, this, &pool]() {
 		pool->returnConnection(std::move(stub));
 		});
+	Status status = stub->NotifyAddFriend(&context, req, &rsp);
 
 	if (!status.ok()) {
 		rsp.set_error(ErrorCodes::RPCFailed);
@@ -73,8 +77,8 @@ bool ChatGrpcClient::GetBaseInfo(std::string base_key, int uid, std::shared_ptr<
 		userinfo->desc = root["desc"].asString();
 		userinfo->sex = root["sex"].asInt();
 		userinfo->icon = root["icon"].asString();
-		LLOG_INFO << "user login uid is  " << userinfo->uid << " name  is "
-			<< userinfo->name << " pwd is " << userinfo->pwd << " email is " << userinfo->email << endl;
+		LLOG_DEBUG << "user login uid is " << userinfo->uid << " name is "
+			<< userinfo->name << " email is " << userinfo->email << endl;
 	}
 	else {
 		//redis中没有则查询mysql
@@ -100,6 +104,7 @@ bool ChatGrpcClient::GetBaseInfo(std::string base_key, int uid, std::shared_ptr<
 		RedisMgr::GetInstance()->Set(base_key, redis_root.toStyledString());
 	}
 
+	return true;
 }
 
 AuthFriendRsp ChatGrpcClient::NotifyAuthFriend(std::string server_ip, const AuthFriendReq& req) {
@@ -119,10 +124,14 @@ AuthFriendRsp ChatGrpcClient::NotifyAuthFriend(std::string server_ip, const Auth
 	auto& pool = find_iter->second;
 	ClientContext context;
 	auto stub = pool->getConnection();
-	Status status = stub->NotifyAuthFriend(&context, req, &rsp);
+	if (!stub) {
+		rsp.set_error(ErrorCodes::RPCFailed);
+		return rsp;
+	}
 	Defer defercon([&stub, this, &pool]() {
 		pool->returnConnection(std::move(stub));
 		});
+	Status status = stub->NotifyAuthFriend(&context, req, &rsp);
 
 	if (!status.ok()) {
 		rsp.set_error(ErrorCodes::RPCFailed);
@@ -157,10 +166,14 @@ TextChatMsgRsp ChatGrpcClient::NotifyTextChatMsg(std::string server_ip,
 	auto& pool = find_iter->second;
 	ClientContext context;
 	auto stub = pool->getConnection();
-	Status status = stub->NotifyTextChatMsg(&context, req, &rsp);
+	if (!stub) {
+		rsp.set_error(ErrorCodes::RPCFailed);
+		return rsp;
+	}
 	Defer defercon([&stub, this, &pool]() {
 		pool->returnConnection(std::move(stub));
 		});
+	Status status = stub->NotifyTextChatMsg(&context, req, &rsp);
 
 	if (!status.ok()) {
 		rsp.set_error(ErrorCodes::RPCFailed);
@@ -171,12 +184,13 @@ TextChatMsgRsp ChatGrpcClient::NotifyTextChatMsg(std::string server_ip,
 }
 
 // 跨服踢人：uid 上次登录在 server_ip 这台节点上，通知它把旧连接踢掉。
-// Defer 里先填好默认回包，即使目标节点不在连接池里（比如那台节点挂了）也能正常返回
+// 先填好默认 Success，即使目标节点不在连接池里（比如那台节点挂了）也能正常返回，
+// 但真正 RPC 失败时不会在 Defer 里把 RPCFailed 覆盖掉
 KickUserRsp ChatGrpcClient::NotifyKickUser(std::string server_ip, const KickUserReq& req)
 {
 	KickUserRsp rsp;
+	rsp.set_error(ErrorCodes::Success);
 	Defer defer([&rsp, &req]() {
-		rsp.set_error(ErrorCodes::Success);
 		rsp.set_uid(req.uid());
 		});
 
@@ -189,6 +203,10 @@ KickUserRsp ChatGrpcClient::NotifyKickUser(std::string server_ip, const KickUser
 	auto& pool = find_iter->second;
 	ClientContext context;
 	auto stub = pool->getConnection();
+	if (!stub) {
+		rsp.set_error(ErrorCodes::RPCFailed);
+		return rsp;
+	}
 	Defer defercon([&stub, this, &pool]() {
 		pool->returnConnection(std::move(stub));
 		});

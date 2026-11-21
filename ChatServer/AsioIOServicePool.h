@@ -1,4 +1,6 @@
 #pragma once
+#include <algorithm>
+#include <thread>
 #include <vector>
 #include <boost/asio.hpp>
 #include "Singleton.h"
@@ -24,7 +26,7 @@ public:
     void Stop();                    // 停止线程池：释放 work_guard 并 join 所有 io 线程
 
 private:
-    AsioIOServicePool(std::size_t size = 2);
+    AsioIOServicePool(std::size_t size = std::max<std::size_t>(4, std::thread::hardware_concurrency()));
 
     std::vector<IOService> _ioServices;      // 所有 io_context，下标即线程编号
     std::vector<WorkPtr> _works;             // 每个 io_context 的 work_guard，防止 run() 没任务时提前返回

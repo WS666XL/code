@@ -5,7 +5,7 @@
     },
     "mysql": {
         "host": "localhost",
-        "user": "llfc",
+        "user": "xulei",
         "port": 3306
     },
     "redis": {

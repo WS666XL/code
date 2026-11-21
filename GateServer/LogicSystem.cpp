@@ -261,7 +261,7 @@ LogicSystem::LogicSystem() {
     //用户登录逻辑
     RegPost("/user_login", [](std::shared_ptr<HttpConnection> connection) {
         auto body_str = boost::beast::buffers_to_string(connection->_request.body().data());
-        LLOG_INFO << "receive body is " << body_str << std::endl;
+        LLOG_DEBUG << "receive login body length=" << body_str.size() << std::endl;
         connection->_response.set(http::field::content_type, "text/json");
         Json::Value root;
         Json::Reader reader;
@@ -299,7 +299,7 @@ LogicSystem::LogicSystem() {
             return true;
         }
 
-        LLOG_INFO << "succeed to load userinfo uid is " << userInfo.uid << std::endl;
+        LLOG_DEBUG << "succeed to load userinfo uid is " << userInfo.uid << std::endl;
         root["error"] = 0;
         root["email"] = email;
         root["uid"] = userInfo.uid;

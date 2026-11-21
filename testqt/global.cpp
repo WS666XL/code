@@ -53,7 +53,8 @@ QList<PendingAvatarLabel>& PendingAvatarLabels()
 }
 
 // 前置声明：下载完成回调里要清缓存后再重载（定义在后文）
-void ClearAvatarMemCache(int owner_uid);
+void ClearAvatarMemCache(int owner_uid, const QString& icon_name = QString());
+QPixmap LoadAvatarPixmapImpl(const QString& icon, const QSize& size, int owner_uid, bool allow_download);
 
 // 确保下载完成信号只 connect 一次（静态初始化保证线程安全的懒加载语义）
 void EnsureAvatarSignalConnected()
@@ -68,12 +69,11 @@ void EnsureAvatarSignalConnected()
                         continue;
                     }
                     if (it->label) {
-                        // 本地文件此时已就绪。必须先清一次两级缓存：
-                        // 1057 到达时聊天页会立即重刷气泡，用"还没更新的旧文件"
-                        // 又往缓存里填了一份旧像素，不清的话这里读到的还是旧图
-                        ClearAvatarMemCache(it->owner_uid);
+                        // 本地文件此时已就绪。先清两级缓存（含 QPixmapCache 中该文件的条目），
+                        // 再以 allow_download=false 重载：即使文件损坏也不会再次触发下载造成死循环
+                        ClearAvatarMemCache(it->owner_uid, it->icon);
                         it->label->setPixmap(
-                            LoadAvatarPixmap(it->icon, it->size, it->owner_uid));
+                            LoadAvatarPixmapImpl(it->icon, it->size, it->owner_uid, false));
                         ++it;
                     } else {
                         // label 已随列表条目销毁：从注册表剔除
@@ -108,11 +108,15 @@ bool IsServerFileNameIcon(const QString& icon)
 // Qt 全局缓存里，重加载仍命中旧像素）。只清内存、不动本地文件。
 // 注意：不区分 icon 形态，默认编号/资源路径的条目也要清——
 // 首次换头像时本地 icon 还是 "1"，正是这些条目会挡住新图
-void ClearAvatarMemCache(int owner_uid)
+void ClearAvatarMemCache(int owner_uid, const QString& icon_name)
 {
     QString uid_str = QString::number(owner_uid);
     QString avatar_dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
                          + "/" + uid_str + "/avatars";
+
+    if (IsServerFileNameIcon(icon_name)) {
+        QPixmapCache::remove(avatar_dir + "/" + QFileInfo(icon_name).fileName());
+    }
 
     auto& cache = ScaledCache();
     for (auto it = cache.begin(); it != cache.end();) {
@@ -156,7 +160,7 @@ void InvalidateAvatarCache(int owner_uid, const QString& icon)
         return;
     }
 
-    ClearAvatarMemCache(owner_uid);
+    ClearAvatarMemCache(owner_uid, icon);
 
     if (!icon.isEmpty()) {
         // 显示此人头像的 label 全部改成新文件名（下载完成后按它匹配刷新）
@@ -198,7 +202,6 @@ void RefreshSelfAvatar()
     if (my_uid <= 0) {
         return;
     }
-    ClearAvatarMemCache(my_uid);
 
     // 上传成功后 _icon 已同步为服务器文件名；注册表里自己的条目也要改成新名字，
     // 否则重新加载仍按旧的默认编号/资源路径取图（首次换头像时就是这样）
@@ -206,6 +209,7 @@ void RefreshSelfAvatar()
     if (auto self_info = UserMgr::GetInstance()->GetUserInfo()) {
         self_icon = self_info->_icon;
     }
+    ClearAvatarMemCache(my_uid, self_icon);
 
     auto& list = PendingAvatarLabels();
     for (auto it = list.begin(); it != list.end(); ++it) {
@@ -219,12 +223,13 @@ void RefreshSelfAvatar()
     }
 }
 
-// 头像统一加载入口：原图只解码一次（存进 QPixmapCache），缩放结果按
+namespace {
+// 头像统一加载核心实现：原图只解码一次（存进 QPixmapCache），缩放结果按
 // "icon#所有者uid@尺寸"缓存。为什么要它：聊天列表、联系人列表、资料页、
 // 搜索弹窗会对同一张头像各自 QPixmap(path) 全图解码 + SmoothTransformation 缩放，
 // 条目一多主线程就卡。缓存 key 带上 owner_uid：不同用户可以同名 head.png，
 // 不带的话 A 的头像下载完成后会污染 B 的缓存条目
-QPixmap LoadAvatarPixmap(const QString& icon, const QSize& size, int owner_uid)
+QPixmap LoadAvatarPixmapImpl(const QString& icon, const QSize& size, int owner_uid, bool allow_download)
 {
     // 首次调用时顺带把 1057 头像变更通知挂上（静态懒加载，重复调用零成本）：
     // 任何界面加载头像就意味着本客户端会显示别人的头像，必须监听变更
@@ -279,10 +284,16 @@ QPixmap LoadAvatarPixmap(const QString& icon, const QSize& size, int owner_uid)
     QPixmap pixmap;
     if (is_res_path) {
         pixmap = QPixmap(load_path);          // 资源路径不走 QPixmapCache 的文件路径逻辑
-        QPixmapCache::insert(icon, pixmap);
-    } else if (!QPixmapCache::find(load_path, &pixmap)) {
+        if (!pixmap.isNull()) {
+            QPixmapCache::insert(icon, pixmap);
+        }
+    } else if (!QPixmapCache::find(load_path, &pixmap) || pixmap.isNull()) {
         pixmap = QPixmap(load_path);
-        QPixmapCache::insert(load_path, pixmap);
+        // 仅当图片成功加载时才写入 QPixmapCache：否则首次本地缺文件时会缓存一个空图，
+        // 导致下载完成后仍命中空图 → 再次触发下载 → 死循环刷屏
+        if (!pixmap.isNull()) {
+            QPixmapCache::insert(load_path, pixmap);
+        }
     }
 
     QPixmap result;
@@ -302,7 +313,7 @@ QPixmap LoadAvatarPixmap(const QString& icon, const QSize& size, int owner_uid)
 
     // ---- 加载失败：默认头像兜底 + 异步下载回显 ----
     // 只有"服务器文件名"形态才值得下载（本地路径失败是文件真丢了，默认头像兜底即可）
-    if (!is_res_path && !icon.contains('/') && !icon.isEmpty()) {
+    if (allow_download && !is_res_path && !icon.contains('/') && !icon.isEmpty()) {
         FileTcpMgr::GetInstance()->DownloadAvatar(icon, owner_uid);
     }
     // 先显示默认头像占位；下载完成后 sig_avatar_downloaded 会把注册的 label 重刷
@@ -311,6 +322,13 @@ QPixmap LoadAvatarPixmap(const QString& icon, const QSize& size, int owner_uid)
         fallback = fallback.scaled(size, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
     }
     return fallback;
+}
+} // namespace
+
+// 头像统一加载入口
+QPixmap LoadAvatarPixmap(const QString& icon, const QSize& size, int owner_uid)
+{
+    return LoadAvatarPixmapImpl(icon, size, owner_uid, true);
 }
 
 // 把 label 注册进"待刷新表"：下载完成、或收到 1057 头像变更时统一刷新。
