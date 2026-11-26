@@ -28,7 +28,7 @@ import subprocess
 import sys
 
 root = pathlib.Path(sys.argv[1])
-qt_dir = root / "testqt"
+qt_dir = root / "DesktopClient"
 
 entries = json.loads((root / "build" / "compile_commands.json").read_text())
 

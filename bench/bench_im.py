@@ -113,12 +113,12 @@ def snapshot_server_rss() -> Dict[str, float]:
     out = subprocess.run(
         ["ps", "-eo", "comm,rss"], capture_output=True, text=True
     ).stdout
-    targets = {"GateServer", "StatusServer", "ChatServer", "ChatServer2", "ResourceServer"}
+    targets = {"ApiGateway", "RouteServer", "MsgServer", "FileServer"}
     rss_mb: Dict[str, float] = {}
     for line in out.splitlines():
         parts = line.split()
         if len(parts) == 2 and parts[0] in targets:
-            rss_mb[parts[0]] = round(int(parts[1]) / 1024.0, 1)
+            rss_mb[parts[0]] = round(rss_mb.get(parts[0], 0.0) + int(parts[1]) / 1024.0, 1)
     return rss_mb
 
 
@@ -127,8 +127,8 @@ def setup_bench_data(num_users: int, mysql_user: str, mysql_pass: str, mysql_db:
     uids = [BENCH_UID_BASE + i for i in range(num_users)]
     # 备份 logincount，避免影响原有计数
     orig_counts = {
-        "chatserver1": run_redis(["HGET", "logincount", "chatserver1"], redis_port, redis_pass),
-        "chatserver2": run_redis(["HGET", "logincount", "chatserver2"], redis_port, redis_pass),
+        "im-node-1": run_redis(["HGET", "logincount", "im-node-1"], redis_port, redis_pass),
+        "im-node-2": run_redis(["HGET", "logincount", "im-node-2"], redis_port, redis_pass),
     }
 
     # 先清理上次可能残留的 bench 数据
