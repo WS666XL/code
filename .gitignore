@@ -29,3 +29,6 @@ llfcchat/
 
 # MailService 的 node 依赖
 node_modules/
+
+# 本地连接云服务器的客户端测试副本
+DesktopClient_test/
