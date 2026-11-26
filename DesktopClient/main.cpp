@@ -10,7 +10,8 @@ int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);          // 每个 Qt GUI 程序都必须有一个 QApplication
     a.setApplicationName("qingxun");
-    a.setApplicationDisplayName(QStringLiteral("轻讯"));
+    // 主窗口标题已在 mainwindow.ui 设为“轻讯”；不设 applicationDisplayName，
+    // 避免 Qt 自动给子弹窗标题拼上“— 轻讯”后缀在 WSLg X11 标题栏显示为方块字
     // 日志：控制台 + <程序目录>/logs/client.log
     xulei::Logger::Init("client",
         (QCoreApplication::applicationDirPath() + "/logs").toStdString(), "debug");

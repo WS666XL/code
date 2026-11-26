@@ -21,45 +21,39 @@ TcpMgr::TcpMgr():_host(""),_port(0),_b_recv_pending(false),_message_id(0),_messa
     });
 
     QObject::connect(&_socket, &QTcpSocket::readyRead, [&]() {
-        // 当有数据可读时，读取所有数据
-        // 读取所有数据并追加到缓冲区
+        // 当有数据可读时，读取所有数据并追加到缓冲区
         _buffer.append(_socket.readAll());
 
-        QDataStream stream(&_buffer, QIODevice::ReadOnly);
-        stream.setVersion(QDataStream::Qt_5_0);
-
         forever {
-            //先解析头部
-            if(!_b_recv_pending){
-                // 检查缓冲区中的数据是否足够解析出一个消息头（消息ID + 消息长度）
+            // 先解析头部：每轮新建 QDataStream 按当前 _buffer 头部读，
+            // 避免公网粘包时 _buffer 被截断后外部流游标错位（跳读包头导致整条 TCP 流错乱）
+            if (!_b_recv_pending) {
                 if (_buffer.size() < static_cast<int>(sizeof(quint16) * 2)) {
                     return; // 数据不够，等待更多数据
                 }
 
-                // 预读取消息ID和消息长度，但不从缓冲区中移除
+                QDataStream stream(_buffer);
+                stream.setVersion(QDataStream::Qt_5_0);
                 stream >> _message_id >> _message_len;
 
-                //将buffer 中的前四个字节移除
-                _buffer = _buffer.mid(sizeof(quint16) * 2);
+                // 将 buffer 中的前四个字节移除
+                _buffer.remove(0, static_cast<int>(sizeof(quint16) * 2));
 
-                // 输出读取的数据
                 LLOG_DEBUG << "Message ID:" << _message_id << ", Length:" << _message_len;
-
             }
 
-            //buffer剩余长读是否满足消息体长度，不满足则退出继续等待接受
-            if(_buffer.size() < _message_len){
+            // buffer 剩余长度是否满足消息体长度，不满足则退出继续等待接收
+            if (_buffer.size() < _message_len) {
                 _b_recv_pending = true;
                 return;
             }
 
             _b_recv_pending = false;
-            // 读取消息体
-            QByteArray messageBody = _buffer.mid(0, _message_len);
-            LLOG_DEBUG << "receive body msg is " << messageBody ;
+            QByteArray messageBody = _buffer.left(_message_len);
+            LLOG_DEBUG << "receive body msg is " << messageBody;
 
-            _buffer = _buffer.mid(_message_len);
-            handleMsg(ReqId(_message_id),_message_len, messageBody);
+            _buffer.remove(0, _message_len);
+            handleMsg(ReqId(_message_id), _message_len, messageBody);
         }
 
     });
