@@ -108,11 +108,11 @@ if [ "$PAUSE_DB" -eq 1 ] && systemctl is-active --quiet mysql 2>/dev/null; then
     MYSQL_WAS_ACTIVE=1
 fi
 
-# 4. 安装 MailService 依赖（国内镜像加速）
+# 4. 安装 MailService 依赖（国内镜像加速；清理旧 lock 避免 npm 9 下 @grpc/grpc-js 缺 build/src/index.js）
 if [ "$SKIP_MAIL" -eq 0 ] && [ -f "$ROOT/MailService/package.json" ]; then
-    if [ ! -d "$ROOT/MailService/node_modules/@grpc/grpc-js" ]; then
+    if [ ! -f "$ROOT/MailService/node_modules/@grpc/grpc-js/build/src/index.js" ]; then
         echo "[4/5] 安装 MailService (Node.js) 依赖..."
-        (cd "$ROOT/MailService" && npm install --registry=https://registry.npmmirror.com --no-audit --no-fund)
+        (cd "$ROOT/MailService" && rm -rf node_modules package-lock.json && npm install --registry=https://registry.npmmirror.com --no-audit --no-fund)
     else
         echo "[4/5] MailService 依赖已存在，跳过 npm install"
     fi
