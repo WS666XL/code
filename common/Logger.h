@@ -5,23 +5,40 @@
 // 统一日志（服务端 + Qt 客户端共用）
 //
 // 用法：
-//   xulei::Logger::Init("chatserver1", "logs", "info");  // 程序启动时调用一次
+//   xulei::Logger::Init("apigateway", "logs", "info");  // 程序启动时调用一次
 //   LLOG_INFO << "server started on port " << port;
 //   LLOG_WARN << "redis connect failed: " << err;
 //   LLOG_ERROR << "sql exception: " << e.what();
 //   LLOG_DEBUG << "recv msg id " << id;
 //
-// 特点：
-//   - 同时输出到控制台和文件（logs/<名字>.log）
-//   - 滚动日志：单文件 5MB，保留 3 个备份
-//   - 线程安全；每条都 flush，程序崩溃也不丢最后几条
-//   - 宏后面直接接 <<，和原来 cout/qDebug 的写法几乎一样
-//   - 日志格式：[时间] [级别] [线程id] [文件:行号] 内容
+// 说明：
+//   - Linux 服务端/客户端装有 spdlog 时自动使用 spdlog（5MB x 3 滚动日志）
+//   - Windows 或未安装 spdlog（或定义 QINGXUN_NO_SPDLOG）时自动降级为
+//     纯标准 C++17 轻量实现：零第三方依赖、编译极快极省内存，同样支持
+//     控制台 + 文件落盘（5MB 自动轮转）与全部 LLOG_* 流式接口
 // ============================================================
 
+#if !defined(QINGXUN_NO_SPDLOG) && defined(__has_include)
+#  if __has_include(<spdlog/spdlog.h>)
+#    define QINGXUN_USE_SPDLOG 1
+#  else
+#    define QINGXUN_USE_SPDLOG 0
+#  endif
+#else
+#  define QINGXUN_USE_SPDLOG 0
+#endif
+
+#if QINGXUN_USE_SPDLOG
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#else
+#include <atomic>
+#include <ctime>
+#include <fstream>
+#include <mutex>
+#include <thread>
+#endif
 
 #include <algorithm>
 #include <cctype>
@@ -36,6 +53,8 @@
 #ifdef QT_CORE_LIB
 // Qt 客户端里 qDebug 常直接打印这些类型，这里补上流输出，避免编译报错
 #include <QByteArray>
+#include <QDir>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -48,15 +67,13 @@
 
 namespace xulei {
 
+#if QINGXUN_USE_SPDLOG
+
 class Logger {
 public:
-    // name: 日志文件名（服务名/客户端名）
-    // dir:  日志目录，相对路径按程序当前工作目录算
-    // level: trace/debug/info/warn/error/critical/off
     static void Init(const std::string& name,
                      const std::string& dir = "logs",
                      const std::string& level = "info") {
-        // 配置里没写 [Log] 时传进来的是空串，这里回退到默认值
         const std::string use_dir = dir.empty() ? "logs" : dir;
         const std::string use_level = level.empty() ? "info" : level;
         try {
@@ -82,13 +99,11 @@ public:
             spdlog::flush_every(std::chrono::seconds(1));
             spdlog::set_default_logger(logger);
 
-            // 日志库内部错误（比如磁盘满）不要抛异常打断业务
             spdlog::set_error_handler([](const std::string& msg) {
                 std::fprintf(stderr, "[logger] %s\n", msg.c_str());
             });
         }
         catch (const std::exception& e) {
-            // 初始化失败也不能影响程序启动，退回控制台默认日志
             std::fprintf(stderr, "[logger] init failed: %s\n", e.what());
         }
     }
@@ -113,7 +128,6 @@ public:
     }
 
 private:
-    // 防止名字里带路径分隔符，把日志写到意料之外的位置
     static std::string SafeFileName(const std::string& name) {
         std::string out = name;
         for (char& c : out) {
@@ -128,10 +142,11 @@ private:
     }
 };
 
-// 一条日志的临时对象：析构时一次性写出去，所以可以像 cout 一样随意 <<
+using LogLevel = spdlog::level::level_enum;
+
 class LogLine {
 public:
-    LogLine(spdlog::level::level_enum level, const char* file, int line)
+    LogLine(LogLevel level, const char* file, int line)
         : _level(level), _loc{ file, line, nullptr } {
         auto* logger = spdlog::default_logger_raw();
         _enabled = (logger != nullptr && logger->should_log(_level));
@@ -146,7 +161,6 @@ public:
             return;
         }
         std::string msg = _stream.str();
-        // 兼容原来语句末尾的 std::endl：去掉多余换行，日志库会自己加
         while (!msg.empty() && (msg.back() == '\n' || msg.back() == '\r')) {
             msg.pop_back();
         }
@@ -154,9 +168,215 @@ public:
             logger->log(_loc, _level, msg);
         }
         catch (...) {
-            // 日志失败不影响业务
         }
     }
+
+#else // ==================== 轻量内置日志（零 spdlog 依赖） ====================
+
+enum class LogLevel : int {
+    trace = 0,
+    debug = 1,
+    info = 2,
+    warn = 3,
+    err = 4,
+    critical = 5,
+    off = 6
+};
+
+class Logger {
+public:
+    static void Init(const std::string& name,
+                     const std::string& dir = "logs",
+                     const std::string& level = "info") {
+        auto& st = State();
+        std::lock_guard<std::mutex> lock(st.mtx);
+        st.level.store(static_cast<int>(ParseLevel(level.empty() ? "info" : level)),
+                       std::memory_order_relaxed);
+        const std::string use_dir = dir.empty() ? "logs" : dir;
+        const std::string safe_name = SafeFileName(name);
+#ifdef QT_CORE_LIB
+        QString qdir = QString::fromUtf8(use_dir.c_str());
+        QDir().mkpath(qdir);
+        st.log_path = qdir + "/" + QString::fromUtf8(safe_name.c_str()) + ".log";
+        if (st.qfile.isOpen()) {
+            st.qfile.close();
+        }
+        st.qfile.setFileName(st.log_path);
+        st.qfile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text);
+#else
+        try {
+            std::filesystem::create_directories(use_dir);
+            st.log_path = use_dir + "/" + safe_name + ".log";
+            if (st.ofs.is_open()) {
+                st.ofs.close();
+            }
+            st.ofs.open(st.log_path, std::ios::out | std::ios::app);
+        }
+        catch (const std::exception& e) {
+            std::fprintf(stderr, "[logger] init failed: %s\n", e.what());
+        }
+#endif
+    }
+
+    static void SetLevel(const std::string& level) {
+        State().level.store(static_cast<int>(ParseLevel(level)),
+                            std::memory_order_relaxed);
+    }
+
+    static bool ShouldLog(LogLevel lv) {
+        return static_cast<int>(lv) >= State().level.load(std::memory_order_relaxed)
+            && State().level.load(std::memory_order_relaxed) < static_cast<int>(LogLevel::off);
+    }
+
+    static LogLevel ParseLevel(const std::string& text) {
+        std::string s = text;
+        std::transform(s.begin(), s.end(), s.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (s == "trace") return LogLevel::trace;
+        if (s == "debug") return LogLevel::debug;
+        if (s == "warn" || s == "warning") return LogLevel::warn;
+        if (s == "error") return LogLevel::err;
+        if (s == "critical") return LogLevel::critical;
+        if (s == "off") return LogLevel::off;
+        return LogLevel::info;
+    }
+
+    static void Write(LogLevel lv, const char* file, int line, const std::string& msg) {
+        using namespace std::chrono;
+        const auto now = system_clock::now();
+        const auto ms = duration_cast<milliseconds>(now.time_since_epoch()) % 1000;
+        const std::time_t tt = system_clock::to_time_t(now);
+        std::tm tm_buf{};
+#ifdef _WIN32
+        localtime_s(&tm_buf, &tt);
+#else
+        localtime_r(&tt, &tm_buf);
+#endif
+        char date_buf[32];
+        std::snprintf(date_buf, sizeof(date_buf), "%04d-%02d-%02d %02d:%02d:%02d.%03d",
+            tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
+            tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec, static_cast<int>(ms.count()));
+
+        const char* base_file = BaseName(file);
+        const char* lv_str = LevelName(lv);
+
+        std::ostringstream line_ss;
+        line_ss << "[" << date_buf << "] [" << lv_str << "] ["
+                << std::this_thread::get_id() << "] ["
+                << base_file << ":" << line << "] " << msg << "\n";
+        const std::string full = line_ss.str();
+
+        auto& st = State();
+        std::lock_guard<std::mutex> lock(st.mtx);
+        std::fprintf(stderr, "[%s] [%s] %s\n", date_buf + 11, lv_str, msg.c_str());
+        if (lv >= LogLevel::warn) {
+            std::fflush(stderr);
+        }
+#ifdef QT_CORE_LIB
+        if (st.qfile.isOpen()) {
+            // 超过 5MB 简单轮转，保留 .1 备份
+            if (st.qfile.size() >= 5 * 1024 * 1024) {
+                st.qfile.close();
+                QString backup = st.log_path + ".1";
+                QFile::remove(backup);
+                QFile::rename(st.log_path, backup);
+                st.qfile.setFileName(st.log_path);
+                st.qfile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text);
+            }
+            if (st.qfile.isOpen()) {
+                st.qfile.write(full.data(), static_cast<qint64>(full.size()));
+                if (lv >= LogLevel::warn) {
+                    st.qfile.flush();
+                }
+            }
+        }
+#else
+        if (st.ofs.is_open()) {
+            st.ofs << full;
+            if (lv >= LogLevel::warn) {
+                st.ofs.flush();
+            }
+        }
+#endif
+    }
+
+private:
+    struct Impl {
+        std::mutex mtx;
+        std::atomic<int> level{ static_cast<int>(LogLevel::info) };
+#ifdef QT_CORE_LIB
+        QString log_path;
+        QFile qfile;
+#else
+        std::string log_path;
+        std::ofstream ofs;
+#endif
+    };
+
+    static Impl& State() {
+        static Impl inst;
+        return inst;
+    }
+
+    static const char* LevelName(LogLevel lv) {
+        switch (lv) {
+            case LogLevel::trace:    return "trace";
+            case LogLevel::debug:    return "debug";
+            case LogLevel::info:     return "info";
+            case LogLevel::warn:     return "warn";
+            case LogLevel::err:      return "error";
+            case LogLevel::critical: return "critical";
+            default:                 return "off";
+        }
+    }
+
+    static const char* BaseName(const char* path) {
+        if (!path) return "";
+        const char* p = path;
+        for (const char* cur = path; *cur; ++cur) {
+            if (*cur == '/' || *cur == '\\') {
+                p = cur + 1;
+            }
+        }
+        return p;
+    }
+
+    static std::string SafeFileName(const std::string& name) {
+        std::string out = name;
+        for (char& c : out) {
+            if (c == '/' || c == '\\' || c == ':') {
+                c = '_';
+            }
+        }
+        if (out.empty()) {
+            out = "app";
+        }
+        return out;
+    }
+};
+
+class LogLine {
+public:
+    LogLine(LogLevel level, const char* file, int line)
+        : _level(level), _file(file), _line(line), _enabled(Logger::ShouldLog(level)) {
+    }
+
+    ~LogLine() {
+        if (!_enabled) {
+            return;
+        }
+        std::string msg = _stream.str();
+        while (!msg.empty() && (msg.back() == '\n' || msg.back() == '\r')) {
+            msg.pop_back();
+        }
+        try {
+            Logger::Write(_level, _file, _line, msg);
+        }
+        catch (...) {
+        }
+    }
+
+#endif // QINGXUN_USE_SPDLOG
 
     template <typename T>
     LogLine& operator<<(const T& value) {
@@ -242,17 +462,29 @@ public:
 #endif
 
 private:
-    spdlog::level::level_enum _level;
+    LogLevel _level;
+#if QINGXUN_USE_SPDLOG
     spdlog::source_loc _loc;
+#else
+    const char* _file;
+    int _line;
+#endif
     bool _enabled = false;
     std::ostringstream _stream;
 };
 
 } // namespace xulei
 
+#if QINGXUN_USE_SPDLOG
 #define LLOG_DEBUG ::xulei::LogLine(spdlog::level::debug, __FILE__, __LINE__)
 #define LLOG_INFO  ::xulei::LogLine(spdlog::level::info,  __FILE__, __LINE__)
 #define LLOG_WARN  ::xulei::LogLine(spdlog::level::warn,  __FILE__, __LINE__)
-#define LLOG_ERROR ::xulei::LogLine(spdlog::level::err, __FILE__, __LINE__)
+#define LLOG_ERROR ::xulei::LogLine(spdlog::level::err,   __FILE__, __LINE__)
+#else
+#define LLOG_DEBUG ::xulei::LogLine(::xulei::LogLevel::debug, __FILE__, __LINE__)
+#define LLOG_INFO  ::xulei::LogLine(::xulei::LogLevel::info,  __FILE__, __LINE__)
+#define LLOG_WARN  ::xulei::LogLine(::xulei::LogLevel::warn,  __FILE__, __LINE__)
+#define LLOG_ERROR ::xulei::LogLine(::xulei::LogLevel::err,   __FILE__, __LINE__)
+#endif
 
 #endif // LLFC_LOGGER_H

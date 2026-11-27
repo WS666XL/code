@@ -8,8 +8,9 @@ CONFIG += c++17
 
 # 统一日志头文件（服务端/客户端共用，见 common/Logger.h）
 INCLUDEPATH += $$PWD/../common
-# Linux 下系统 spdlog 依赖 fmt 库；Windows 可使用 header-only spdlog（自带 bundled fmt）
+# Linux 下系统 spdlog 依赖 fmt 库；Windows 默认启用内置轻量日志（零依赖、编译快且省内存）
 unix: LIBS += -lfmt
+win32: DEFINES += QINGXUN_NO_SPDLOG
 
 # 生成的可执行文件名、图标与输出目录
 TARGET = qingxun
